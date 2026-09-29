@@ -23,10 +23,15 @@ class ReportingService:
         # 1. Commandes du jour
         all_orders = self.db.query(Order).all()
 
-        daily_orders = [
-            o for o in all_orders 
-            if o.created_at and o.created_at.strftime("%Y-%m-%d") == business_date_str
-        ]
+        daily_orders = []
+        for o in all_orders:
+            match = False
+            if o.created_at and o.created_at.strftime("%Y-%m-%d") == business_date_str:
+                match = True
+            elif o.cash_session and str(o.cash_session.business_date) == business_date_str:
+                match = True
+            if match:
+                daily_orders.append(o)
 
         total_orders = len(daily_orders)
         settled_orders_list = [o for o in daily_orders if o.status == "PAID" or o.due_xof == 0]
@@ -39,9 +44,11 @@ class ReportingService:
 
         # 2. Ventilation des paiements
         all_payments = self.db.query(Payment).all()
+        settled_order_ids_set = {o.id for o in settled_orders_list}
         daily_payments = [
             p for p in all_payments
-            if p.created_at and p.created_at.strftime("%Y-%m-%d") == business_date_str
+            if (p.created_at and p.created_at.strftime("%Y-%m-%d") == business_date_str)
+            or (p.order_id in settled_order_ids_set)
         ]
 
         pay_map: dict[str, dict[str, int]] = {}

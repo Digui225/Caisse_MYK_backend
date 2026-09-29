@@ -1976,6 +1976,53 @@
         }
       }
     },
+    "/api/v1/fne/generate": {
+      "post": {
+        "tags": [
+          "Facturation Normalisée (FNE)"
+        ],
+        "summary": "Generate Fne For Order",
+        "description": "Génère à la demande une Facture Normalisée Électronique (FNE) pour une commande soldée.",
+        "operationId": "generate_fne_for_order_api_v1_fne_generate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FneGenerateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FneDocumentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/fne/documents": {
       "get": {
         "tags": [
@@ -3131,6 +3178,30 @@
         ],
         "title": "FneDocumentResponse"
       },
+      "FneGenerateRequest": {
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "title": "Order Id"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order_id"
+        ],
+        "title": "FneGenerateRequest"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -3839,6 +3910,22 @@
               }
             ],
             "title": "Reference"
+          },
+          "request_fne": {
+            "type": "boolean",
+            "title": "Request Fne",
+            "default": false
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
           }
         },
         "type": "object",

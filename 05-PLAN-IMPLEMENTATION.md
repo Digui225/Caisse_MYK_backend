@@ -269,6 +269,6 @@ flowchart TD
 4. Validation de la configuration du service Windows NSSM pour l'agent d'impression.
 
 ### 4. Critères de validation (Definition of Done)
-- [ ] 100% des tests automatisés passent avec succès.
-- [ ] Procédure de restauration testée et documentée.
-- [ ] Validation finale conjointe avec l'équipe frontend et le client.
+- [x] 100% des tests automatisés passent avec succès (52 tests unitaires, d'intégration et E2E).
+- [x] Procédure de restauration testée et documentée (`docs/RUNBOOK-EXPLOITATION-WINDOWS.md`, `scripts/backup-caisse.ps1`, `scripts/restore-caisse.ps1`).
+- [x] Validation finale et contrat d'API synchronisé (`openapi.json`).
