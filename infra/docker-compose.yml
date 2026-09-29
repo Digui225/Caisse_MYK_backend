@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: infra-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERPASSWORD:-postgres_super_secret}
+      POSTGRES_DB: postgres
+      HOTEL_DB_PASSWORD: ${HOTEL_DB_PASSWORD:-hotel_secret}
+      CAISSE_DB_PASSWORD: ${CAISSE_DB_PASSWORD:-caisse_secret}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - infra_shared
+
+volumes:
+  pgdata:
+
+networks:
+  infra_shared:
+    external: true

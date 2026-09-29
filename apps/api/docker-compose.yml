@@ -1,0 +1,24 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: caisse-api
+    restart: always
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://caisse:caisse_secret@db:5432/caisse}
+      JWT_SECRET: ${JWT_SECRET:-default_secret_key_to_be_replaced_in_env_with_at_least_64_random_characters}
+      TZ: ${TZ:-Africa/Abidjan}
+      PRINT_AGENT_URL: ${PRINT_AGENT_URL:-http://host.docker.internal:8090}
+      FNE_PROVIDER: ${FNE_PROVIDER:-manual}
+    ports:
+      - "8001:8001"
+    networks:
+      - infra_shared
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+networks:
+  infra_shared:
+    external: true

@@ -1,0 +1,97 @@
+import uuid
+from collections.abc import Callable
+from typing import Any
+from fastapi import Depends, Header, Request, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy.orm import Session
+
+from caisse.database import get_db
+from caisse.errors import CaisseException
+from caisse.models.user import User
+from caisse.repositories.users import UserRepository
+from caisse.security import decode_token
+
+security = HTTPBearer(auto_error=False)
+
+
+def get_request_id(request: Request, x_request_id: str | None = Header(None)) -> str:
+    req_id = x_request_id or str(uuid.uuid4())
+    request.state.request_id = req_id
+    return req_id
+
+
+def get_client_ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
+
+
+def require_device_id(x_device_id: str | None = Header(None, alias="X-Device-Id")) -> str:
+    return x_device_id or "default-pos-device"
+
+
+def require_idempotency_key(idempotency_key: str | None = Header(None, alias="Idempotency-Key")) -> str:
+    if not idempotency_key:
+        raise CaisseException(
+            code="IDEMPOTENCY_KEY_REQUIRED",
+            title="Clé d'idempotence manquante",
+            detail="L'en-tête Idempotency-Key est obligatoire pour cette opération financière.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    return idempotency_key
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    db: Session = Depends(get_db),
+) -> User:
+    if not credentials:
+        raise CaisseException(
+            code="AUTHENTICATION_REQUIRED",
+            title="Authentification requise",
+            detail="Veuillez fournir un jeton Bearer valide.",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    token = credentials.credentials
+    payload = decode_token(token)
+    user_id = payload.get("sub")
+    if not user_id:
+        raise CaisseException(
+            code="INVALID_TOKEN",
+            title="Jeton invalide",
+            detail="Identifiant utilisateur introuvable dans le jeton.",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    user = UserRepository(db).get_by_id(user_id)
+    if not user or not user.is_active:
+        raise CaisseException(
+            code="USER_NOT_FOUND_OR_INACTIVE",
+            title="Utilisateur introuvable ou inactif",
+            detail="Ce compte utilisateur est désactivé ou n'existe plus.",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    if user.is_locked():
+        raise CaisseException(
+            code="ACCOUNT_LOCKED",
+            title="Compte temporairement bloqué",
+            detail=f"Trop de tentatives infructueuses. Réessayez après {user.locked_until}.",
+            status_code=status.HTTP_423_LOCKED,
+            meta={"locked_until": user.locked_until.isoformat() if user.locked_until else None},
+        )
+
+    return user
+
+
+def require_role(*allowed_roles: str) -> Callable[[User], User]:
+    def role_dependency(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role not in allowed_roles:
+            raise CaisseException(
+                code="INSUFFICIENT_PRIVILEGE",
+                title="Droits insuffisants",
+                detail=f"Cette action requiert l'un des rôles suivants : {', '.join(allowed_roles)}.",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        return current_user
+
+    return role_dependency
