@@ -51,20 +51,22 @@ class ReportingService:
             or (p.order_id in settled_order_ids_set)
         ]
 
-        pay_map: dict[str, dict[str, int]] = {}
+        pay_map: dict[tuple[str, str | None], dict[str, int]] = {}
         for p in daily_payments:
-            if p.method not in pay_map:
-                pay_map[p.method] = {"count": 0, "total": 0}
-            pay_map[p.method]["count"] += 1
-            pay_map[p.method]["total"] += p.amount_xof
+            key = (p.method, p.provider)
+            if key not in pay_map:
+                pay_map[key] = {"count": 0, "total": 0}
+            pay_map[key]["count"] += 1
+            pay_map[key]["total"] += p.amount_xof
 
         payments_by_method = [
             PaymentMethodSplit(
                 method=m,
+                provider=prov,
                 count=data["count"],
                 total_amount_xof=data["total"],
             )
-            for m, data in pay_map.items()
+            for (m, prov), data in pay_map.items()
         ]
 
         # 3. Top Produits vendus (sur les commandes réglées)

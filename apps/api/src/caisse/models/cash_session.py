@@ -52,6 +52,7 @@ class CashSession(Base, TimestampMixin):
             "cash_register_id",
             unique=True,
             postgresql_where=(status != "CLOSED"),
+            sqlite_where=(status != "CLOSED"),
         ),
     )
 

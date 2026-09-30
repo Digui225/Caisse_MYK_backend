@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from caisse.schemas.common import BaseSchema
 
 
@@ -9,6 +9,21 @@ class TableResponse(BaseSchema):
     seats: int = 4
     sort_order: int = 0
     is_active: bool = True
+
+
+class CreateTableRequest(BaseModel):
+    label: str = Field(..., min_length=1, max_length=50, description="Nom ou numéro de la table")
+    zone: str = Field("Salle", min_length=1, max_length=50, description="Zone du restaurant (ex: Salle, Terrasse)")
+    seats: int = Field(4, ge=1, le=50, description="Nombre de places assises / capacité en personnes")
+    sort_order: int = Field(0, description="Ordre d'affichage")
+
+
+class UpdateTableRequest(BaseModel):
+    label: str | None = Field(None, min_length=1, max_length=50, description="Nom ou numéro mis à jour")
+    zone: str | None = Field(None, min_length=1, max_length=50, description="Zone mise à jour")
+    seats: int | None = Field(None, ge=1, le=50, description="Nombre de places mis à jour")
+    sort_order: int | None = Field(None, description="Ordre d'affichage")
+    is_active: bool | None = Field(None, description="Statut actif / archivé")
 
 
 class TableBoardItem(BaseSchema):

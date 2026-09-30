@@ -18,6 +18,7 @@ import caisse.models.order
 import caisse.models.outbox
 import caisse.models.payment
 import caisse.models.stock
+import caisse.models.settings
 import caisse.models.table
 import caisse.models.user
 from caisse.errors import (
@@ -35,7 +36,8 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup : s'assurer que toutes les tables sont créées
-    Base.metadata.create_all(bind=engine)
+    if settings.APP_ENV != "test":
+        Base.metadata.create_all(bind=engine)
     yield
     # Shutdown
 

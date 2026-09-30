@@ -13,6 +13,7 @@ class TopProductReport(BaseModel):
 
 class PaymentMethodSplit(BaseModel):
     method: str
+    provider: Optional[str] = None
     count: int
     total_amount_xof: int
 
