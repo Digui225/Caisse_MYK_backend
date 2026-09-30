@@ -1,0 +1,13 @@
+# Surcouche de développement : rechargement à chaud, code monté.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+services:
+  api:
+    build:
+      target: dev
+    restart: "no"
+    volumes:
+      - ./src:/app/src
+      - ./alembic:/app/alembic
+      - ./tests:/app/tests
+    environment:
+      APP_ENV: development

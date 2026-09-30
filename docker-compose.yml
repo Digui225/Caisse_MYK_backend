@@ -1,0 +1,24 @@
+# Projet caisse — rejoint le socle PostgreSQL partagé (../infra, réseau infra_shared).
+# Le service `web` (nginx + build React) arrivera avec le frontend ;
+# `worker` (outbox FNE / impression) et `backup` avec les lots L4, L6 et L7.
+services:
+  api:
+    build:
+      context: .
+      target: runtime
+    restart: always
+    env_file: .env
+    ports:
+      - "8001:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # accès à l'agent d'impression (hors Docker)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [infra_shared]
+
+networks:
+  infra_shared:
+    external: true

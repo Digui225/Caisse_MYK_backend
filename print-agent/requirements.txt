@@ -1,0 +1,5 @@
+fastapi>=0.115
+uvicorn>=0.30
+pydantic-settings>=2.7
+python-escpos>=3.1
+pyusb>=1.2
