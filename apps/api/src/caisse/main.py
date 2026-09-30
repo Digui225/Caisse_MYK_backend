@@ -7,7 +7,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from caisse.config import get_settings
-from caisse.errors import CaisseException, caisse_exception_handler, validation_exception_handler
+from caisse.database import Base, engine
+import caisse.models.audit
+import caisse.models.cash_session
+import caisse.models.catalog
+import caisse.models.customer
+import caisse.models.fne
+import caisse.models.idempotency
+import caisse.models.order
+import caisse.models.outbox
+import caisse.models.payment
+import caisse.models.stock
+import caisse.models.table
+import caisse.models.user
+from caisse.errors import (
+    CaisseException,
+    caisse_exception_handler,
+    validation_exception_handler,
+    unhandled_exception_handler,
+)
 from caisse.api.v1.router import api_v1_router
 from caisse.schemas.common import HealthResponse, HealthReadyResponse
 
@@ -16,7 +34,8 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    # Startup
+    # Startup : s'assurer que toutes les tables sont créées
+    Base.metadata.create_all(bind=engine)
     yield
     # Shutdown
 
@@ -43,10 +62,19 @@ async def custom_swagger_ui_html() -> HTMLResponse:
 # Middlewares
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8001",
+        "http://127.0.0.1:8001",
+    ],
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 
@@ -62,6 +90,7 @@ async def request_id_middleware(request: Request, call_next):  # type: ignore
 # Enregistrement des gestionnaires d'erreurs RFC 7807 (problem+json)
 app.add_exception_handler(CaisseException, caisse_exception_handler)  # type: ignore
 app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore
+app.add_exception_handler(Exception, unhandled_exception_handler)  # type: ignore
 
 # Routes système / Health
 @app.get("/health", response_model=HealthResponse, tags=["Système"])

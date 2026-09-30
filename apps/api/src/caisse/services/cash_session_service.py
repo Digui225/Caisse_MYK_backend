@@ -20,6 +20,7 @@ from caisse.schemas.sessions import (
     CashMovementResponse,
     XReportResponse,
     ZReportResponse,
+    ItemSalesDetail,
 )
 from caisse.services.audit_service import AuditService
 from caisse.services.printing_service import PrintingService
@@ -33,9 +34,8 @@ class CashSessionService:
         self.printing_service = PrintingService(db)
         self.audit = AuditService(db)
 
-    def get_current_session(self) -> CashSessionResponse:
-        register = self.repo.get_or_create_default_register()
-        session = self.repo.get_active_by_register_id(register.id)
+    def get_current_session(self, register_id: str | None = None) -> CashSessionResponse:
+        session = self.repo.get_active_by_register_id(register_id)
         if not session:
             raise CaisseException(
                 code="NO_OPEN_SESSION",
@@ -182,13 +182,32 @@ class CashSessionService:
 
         cash_sales = payments_by_method.get("CASH", 0)
 
-        # 4. Ventes par catégorie
+        # 4. Ventes par catégorie et par article
         sales_by_category: dict[str, int] = {}
+        items_map: dict[str, dict] = {}
+
         for o in settled_orders:
             for item in o.items:
                 if item.removed_at is None:
                     cat = item.category_snapshot or "Autre"
                     sales_by_category[cat] = sales_by_category.get(cat, 0) + item.line_total_xof
+
+                    p_name = item.product_name_snapshot
+                    if p_name not in items_map:
+                        items_map[p_name] = {
+                            "product_name": p_name,
+                            "category": cat,
+                            "quantity": 0,
+                            "unit_price_xof": item.unit_price_xof,
+                            "total_ttc_xof": 0,
+                        }
+                    items_map[p_name]["quantity"] += item.quantity
+                    items_map[p_name]["total_ttc_xof"] += item.line_total_xof
+
+        sales_by_item = [
+            ItemSalesDetail(**data)
+            for data in sorted(items_map.values(), key=lambda x: x["total_ttc_xof"], reverse=True)
+        ]
 
         # 5. Espèces théoriques dans le tiroir = Fonds d'ouverture + Ventes espèces + Entrées - Sorties
         expected_cash_xof = session.opening_float_xof + cash_sales + in_xof - out_xof
@@ -203,6 +222,7 @@ class CashSessionService:
             total_sales_vat_xof=total_sales_vat,
             payments_by_method=payments_by_method,
             sales_by_category=sales_by_category,
+            sales_by_item=sales_by_item,
             cash_movements_in_xof=in_xof,
             cash_movements_out_xof=out_xof,
             expected_cash_in_drawer_xof=expected_cash_xof,
@@ -257,6 +277,7 @@ class CashSessionService:
             "total_sales_vat_xof": x_rep.total_sales_vat_xof,
             "payments_by_method": x_rep.payments_by_method,
             "sales_by_category": x_rep.sales_by_category,
+            "sales_by_item": [item.model_dump() for item in x_rep.sales_by_item],
             "cash_movements_in_xof": x_rep.cash_movements_in_xof,
             "cash_movements_out_xof": x_rep.cash_movements_out_xof,
             "expected_cash_xof": expected_cash_xof,
@@ -326,6 +347,7 @@ class CashSessionService:
             total_sales_vat_xof=snap.get("total_sales_vat_xof", 0),
             payments_by_method=snap.get("payments_by_method", {}),
             sales_by_category=snap.get("sales_by_category", {}),
+            sales_by_item=[ItemSalesDetail(**it) for it in snap.get("sales_by_item", [])],
             cash_movements_in_xof=snap.get("cash_movements_in_xof", 0),
             cash_movements_out_xof=snap.get("cash_movements_out_xof", 0),
             expected_cash_in_drawer_xof=snap.get("expected_cash_xof", 0),

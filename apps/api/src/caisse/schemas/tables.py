@@ -22,6 +22,9 @@ class TableBoardItem(BaseSchema):
     current_total_ttc_xof: int = 0
     guests_count: int | None = None
     opened_at: str | None = None
+    server_name: str | None = None
+    items_count: int | None = None
+    service_step: str | None = None
 
 
 class TableBoardResponse(BaseSchema):

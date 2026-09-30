@@ -41,8 +41,9 @@ def calculate_counted_cash(breakdown: dict[str, int]) -> int:
     """Additionne le montant total des espèces comptées par coupures."""
     total_xof = 0
     for denom_str, count in breakdown.items():
+        clean_denom_str = denom_str.removeprefix("coin_").removeprefix("bill_")
         try:
-            denom = int(denom_str)
+            denom = int(clean_denom_str)
         except ValueError as err:
             raise CaisseException(
                 code="INVALID_DENOMINATION",

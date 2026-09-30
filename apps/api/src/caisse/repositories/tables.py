@@ -26,6 +26,7 @@ class TableRepository(BaseRepository[RestaurantTable]):
         # Récupération en une seule requête de toutes les commandes actives
         active_orders = (
             self.db.query(Order)
+            .options(joinedload(Order.opened_by), joinedload(Order.items))
             .filter(
                 Order.table_id.in_(table_ids),
                 Order.status.in_(["OPEN", "PARTIALLY_PAID"]),
@@ -38,6 +39,11 @@ class TableRepository(BaseRepository[RestaurantTable]):
         for t in tables:
             active_order = orders_by_table_id.get(t.id)
             if active_order:
+                active_items = [it for it in active_order.items if not it.removed_at]
+                items_count = sum(it.quantity for it in active_items)
+                last_cat = active_items[-1].category_snapshot if active_items else None
+                service_step = f"{last_cat} / En cours" if last_cat else "En cours"
+
                 board_items.append(
                     {
                         "id": t.id,
@@ -49,7 +55,10 @@ class TableRepository(BaseRepository[RestaurantTable]):
                         "current_order_number": active_order.order_number,
                         "current_total_ttc_xof": active_order.total_ttc_xof,
                         "guests_count": active_order.guests_count,
-                        "opened_at": active_order.opened_at.isoformat(),
+                        "opened_at": active_order.opened_at.isoformat() if active_order.opened_at else None,
+                        "server_name": active_order.opened_by.full_name if active_order.opened_by else "Serveur",
+                        "items_count": items_count,
+                        "service_step": service_step,
                     }
                 )
             else:
@@ -65,6 +74,9 @@ class TableRepository(BaseRepository[RestaurantTable]):
                         "current_total_ttc_xof": 0,
                         "guests_count": None,
                         "opened_at": None,
+                        "server_name": None,
+                        "items_count": None,
+                        "service_step": None,
                     }
                 )
         return board_items

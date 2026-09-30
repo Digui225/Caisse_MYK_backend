@@ -82,3 +82,17 @@ async def validation_exception_handler(
         request_id=request_id,
         meta={"fields": fields_errors},
     )
+
+
+async def unhandled_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    return problem_json_response(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        code="INTERNAL_SERVER_ERROR",
+        title="Erreur interne du serveur",
+        detail=str(exc) or "Une erreur inattendue est survenue.",
+        request_id=request_id,
+        meta={},
+    )

@@ -48,6 +48,14 @@ class CashSessionResponse(BaseSchema):
     totals_snapshot: dict[str, Any] | None = None
 
 
+class ItemSalesDetail(BaseSchema):
+    product_name: str
+    category: str
+    quantity: int
+    unit_price_xof: int
+    total_ttc_xof: int
+
+
 class XReportResponse(BaseSchema):
     cash_session_id: str
     business_date: str
@@ -58,6 +66,7 @@ class XReportResponse(BaseSchema):
     total_sales_vat_xof: int
     payments_by_method: dict[str, int]
     sales_by_category: dict[str, int]
+    sales_by_item: list[ItemSalesDetail] = Field(default_factory=list)
     cash_movements_in_xof: int
     cash_movements_out_xof: int
     expected_cash_in_drawer_xof: int
@@ -77,6 +86,7 @@ class ZReportResponse(BaseSchema):
     total_sales_vat_xof: int
     payments_by_method: dict[str, int]
     sales_by_category: dict[str, int]
+    sales_by_item: list[ItemSalesDetail] = Field(default_factory=list)
     cash_movements_in_xof: int
     cash_movements_out_xof: int
     expected_cash_in_drawer_xof: int

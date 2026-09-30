@@ -35,7 +35,7 @@ async def get_current_session(
 )
 async def open_session(
     payload: SessionOpenRequest,
-    current_user: User = Depends(require_role("CAISSIER")),
+    current_user: User = Depends(require_role("CAISSIER", "RESPONSABLE", "ADMIN")),
     device_id: str = Depends(require_device_id),
     idempotency_key: str = Depends(require_idempotency_key),
     db: Session = Depends(get_db),

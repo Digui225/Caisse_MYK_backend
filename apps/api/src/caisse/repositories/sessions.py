@@ -7,13 +7,23 @@ class CashSessionRepository(BaseRepository[CashSession]):
     def __init__(self, db: Session):
         super().__init__(db, CashSession)
 
-    def get_active_by_register_id(self, register_id: str) -> CashSession | None:
+    def get_active_by_register_id(self, register_id: str | None = None) -> CashSession | None:
+        if register_id:
+            session = (
+                self.db.query(CashSession)
+                .filter(
+                    CashSession.cash_register_id == register_id,
+                    CashSession.status != "CLOSED",
+                )
+                .first()
+            )
+            if session:
+                return session
+
         return (
             self.db.query(CashSession)
-            .filter(
-                CashSession.cash_register_id == register_id,
-                CashSession.status != "CLOSED",
-            )
+            .filter(CashSession.status != "CLOSED")
+            .order_by(CashSession.opened_at.desc())
             .first()
         )
 

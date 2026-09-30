@@ -44,12 +44,7 @@ class Order(Base, TimestampMixin):
     payments = relationship("Payment", back_populates="order", cascade="all, delete-orphan")
 
     __table_args__ = (
-        Index(
-            "uq_single_active_order_per_table",
-            "table_id",
-            unique=True,
-            postgresql_where=(status.in_(["OPEN", "PARTIALLY_PAID"])),
-        ),
+        Index("ix_orders_table_status", "table_id", "status"),
     )
 
 

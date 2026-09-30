@@ -39,10 +39,12 @@ def test_calculate_counted_cash():
         "2000": 5,
         "1000": 10,
         "500": 20,
+        "coin_500": 2,
+        "coin_200": 5,
     }
-    # 100 000 + 20 000 + 10 000 + 10 000 + 10 000 = 150 000
+    # 100 000 + 20 000 + 10 000 + 10 000 + 10 000 + 1 000 + 1 000 = 152 000
     total = calculate_counted_cash(breakdown)
-    assert total == 150000
+    assert total == 152000
 
 
 def test_calculate_counted_cash_negative_count():
