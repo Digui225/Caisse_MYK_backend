@@ -23,7 +23,7 @@ Document vivant : on coche, on corrige et on note les découvertes au fil de l'i
 | D2 | **Prix HT** : `amount` = prix unitaire HT calculé depuis le TTC. On envoie un HT décimal (4 décimales) si l'API l'accepte, sinon arrondi entier ; l'écart TTC caisse ↔ TTC FNE est stocké et surveillé | à valider en sonde (phase 1) |
 | D3 | **Codes TVA** : 18 → `TVA`, 9 → `TVAB`, 0 → `TVAD` (paramètre `fne.vat_codes`). Un seul code par article (exigé par l'API). ⚠ Le restaurant est au **régime TEE** (en-tête FNE) et la FNE décrit `TVAD` comme l'exonération « TEE, TCE, Microentreprise » : si le comptable confirme, **tous les produits passent à 0 % / `TVAD`** (taux par défaut de la caisse aujourd'hui : 18 %) | codes décidés 01/10 ; vraie FNE du 01/10 entièrement en `TVAD` → passer la caisse à 0 % (confirmation comptable souhaitée) |
 | D9 | `clientSellerName` = nom du caissier connecté (rempli sur les vraies FNE du restaurant) ; `measurementUnit` = `U` ; `reference` = code produit | proposé |
-| D10 | **Impression** : la FNE de production est un A4 (logo, QR, visuel FNE, détail). Ticket 80 mm (n° + QR + visuel FNE, logo à imprimer en image) ou remise du PDF / e-mail FNE ? | **ouvert** (pratique actuelle du restaurant + exigence DGI) |
+| D10 | **Impression** : la FNE est remise en **A4** (pratique du restaurant). Pas de FNE sur le ticket 80 mm : la caisse expose le lien de vérification FNE (`token`) que le front ouvre pour impression A4 ; le ticket de caisse peut mentionner le n° FNE. À vérifier en test : la page de vérification s'imprime-t-elle en A4 complet ? Imprimante A4 au poste de caisse ? | **décidé** 01/10 (A4) |
 | D11 | Point de vente et établissement = **paramètres** (`fne.point_of_sale`) : `CAISSE-1` en test, « Service Facturation » en production | proposé |
 | D4 | **Moyen de paiement** : CASH→`cash`, CARD→`card`, MOBILE_MONEY→`mobile-money`, BANK_TRANSFER→`transfer`, CREDIT→`deferred`, OTHER à paramétrer. Paiement mixte : moyen du plus gros montant | proposé |
 | D5 | **Pas d'idempotence côté FNE** : un délai dépassé = résultat **incertain**, jamais renvoyé automatiquement. Seules les erreurs certaines (connexion refusée, 401, 502/503) repartent en file ; **un 500 est incertain** (constaté : facture créée non signée). Pour ne pas ajouter de valeur d'énumération (cassant en pratique, contrat §6), l'incertain reste en `SUBMITTING` avec un champ ajouté `is_uncertain: true` | proposé |
@@ -97,7 +97,7 @@ MANUAL : document traité hors API.
 
 ### Phase 8 — Branchements (dépendent de L4)
 - [ ] Remboursement → avoir FNE
-- [ ] Ticket : n° FNE + QR (`token`) via la file d'impression ; en attendant, l'URL du QR est renvoyée par l'API
+- [ ] FNE remise en A4 via le lien de vérification (`token`) renvoyé par l'API (D10) ; n° FNE optionnel sur le ticket de caisse
 
 ### Phase 9 — Validation DGI et production
 - [ ] Jeu de spécimens : B2C espèces, B2C mobile money, B2B avec NCC, multi-taux, avoir partiel
