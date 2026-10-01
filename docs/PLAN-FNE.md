@@ -80,7 +80,7 @@ MANUAL : document traité hors API.
 - [ ] Alerte stock de stickers (`warning` ou solde sous le seuil) → journal + `/health`
 
 ### Phase 6 — API (contrat §4.8, + ajouts non cassants)
-- [ ] `GET /customers?search=&ncc=` · `POST /customers`
+- [ ] `GET /customers?search=&ncc=` · `POST /customers` — contrôle du **format** du NCC côté caisse (7 chiffres + 1 lettre d'après les exemples DGI, à confirmer) : la FNE ne le vérifie pas à la validation
 - [ ] `POST /orders/{id}/fne` : template (B2C par défaut, B2B/B2G avec `customer_id`), commande soldée obligatoire, soumission synchrone 4 s puis file
 - [ ] `GET /fne/documents?status=&business_date=` · `POST /fne/documents/{id}/retry` (R)
 - [ ] `GET /fne/documents/{id}/duplicate` (C) · `GET /fne/pending-count` (C)
@@ -112,3 +112,4 @@ MANUAL : document traité hors API.
 | 01/10/2026 | `pointOfSale` inconnu → 400 `"Point of sale is invalid"`. Il faut créer un point de vente dans l'espace FNE (outil « Application FNE », l'autre choix étant « TPE ») ; `CAISSE-1` créé | `fne.point_of_sale = "CAISSE-1"` |
 | 01/10/2026 | Avec `CAISSE-1` : validation passée puis 500 `invoice_signing_error`, identique avec un HT à 4 décimales ou entier | Cause côté compte FNE (stickers, établissement incomplet ou point de vente non actif) ; un 500 de signature doit être vérifié dans l'espace FNE avant d'être considéré « sans danger » |
 | 01/10/2026 | Les deux 500 ont laissé **deux factures « Vente » sans numéro** dans « Reçus et factures émis » ; solde de stickers à 0 FCFA | 500 reclassé incertain ; demander des stickers de test à la DGI. Montants FNE : 6 932 HT + 1 068 TVA = 8 000 TTC, identiques à la caisse avec un HT à 4 décimales comme entier (D2 rassurante) |
+| 01/10/2026 | Essai B2B avec un NCC absurde (`0000000X`) : pas de 400 sur `clientNcc`, même 500 de signature qu'en B2C | La FNE ne vérifie pas le NCC à la validation → contrôle de format côté caisse ; le blocage de signature ne dépend pas du modèle |
