@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from caisse.domain.enums import CategoryKind
 from caisse.models.catalog import Category, Product
 from caisse.models.stock import StockItem
+from caisse.repositories import settings as settings_repo
 
 # (catégorie, kind, groupe fiscal, couleur, [(nom, libellé ticket, prix, suivi stock)])
 DEMO_MENU: list[tuple[str, CategoryKind, str, str, list[tuple[str, str, int, bool]]]] = [
@@ -78,6 +79,7 @@ DEMO_MENU: list[tuple[str, CategoryKind, str, str, list[tuple[str, str, int, boo
 def load_demo_menu(db: Session) -> int:
     """Idempotent : ne crée que ce qui manque. Retourne le nombre de produits créés."""
     created = 0
+    vat_rate = settings_repo.default_vat_rate(db)
     for cat_order, (cat_name, kind, group, color, products) in enumerate(DEMO_MENU):
         category = db.scalar(select(Category).where(Category.name == cat_name))
         if category is None:
@@ -96,7 +98,7 @@ def load_demo_menu(db: Session) -> int:
                 price_xof=price,
                 track_stock=track,
                 sort_order=prod_order,
-                vat_rate=Decimal("18.00"),
+                vat_rate=vat_rate,
                 color=color,
             )
             db.add(product)

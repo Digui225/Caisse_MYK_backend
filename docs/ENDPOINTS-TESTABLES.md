@@ -73,6 +73,8 @@ Les listes renvoient `{"items": [...], "next_cursor": null}`. Il n'y a **pas enc
 
 Tous les montants sont des **entiers en XOF** (`price_xof`, `total_ttc_xof`…). Seuls `vat_rate` et `stock_quantity` sont des nombres décimaux.
 
+**TVA :** le restaurant est au **régime TEE** (confirmé le 01/10/2026) : les produits sont à **0 %**, donc `total_ht_xof` = `total_ttc_xof` et `total_vat_xof` = 0. Le taux par défaut est le paramètre `vat.default_rate` ; `python -m caisse.cli set-vat-rate 0 --all-products` l'applique à une base existante.
+
 ### Format des erreurs (`application/problem+json`)
 
 ```json
@@ -488,7 +490,7 @@ Réponse `200` : triée par `sort_order` puis par nom.
       "short_name": "Bissap",
       "category_id": "c1d2…",
       "price_xof": 1000,
-      "vat_rate": 18.0,
+      "vat_rate": 0.0,
       "track_stock": true,
       "stock_quantity": 48.0,
       "is_active": true,
@@ -502,7 +504,7 @@ Réponse `200` : triée par `sort_order` puis par nom.
       "short_name": "Poulet braisé",
       "category_id": "d4e5…",
       "price_xof": 4000,
-      "vat_rate": 18.0,
+      "vat_rate": 0.0,
       "track_stock": false,
       "stock_quantity": null,
       "is_active": true,
@@ -539,7 +541,7 @@ Corps :
 | `name` | chaîne | 1 à 120 caractères. Le libellé ticket (`short_name`) en reprend les 20 premiers. |
 | `price_xof` | entier | ≥ 0, prix TTC |
 | `category_id` | UUID | Catégorie active ; elle fixe le groupe fiscal de la ligne |
-| `vat_rate` | décimal | Facultatif, `18.00` par défaut |
+| `vat_rate` | décimal | Facultatif ; défaut : paramètre `vat.default_rate` (`0.00`, régime TEE) |
 
 ```json
 { "name": "Poisson capitaine 1 kg", "price_xof": 9000, "category_id": "c1d2…" }
@@ -834,8 +836,8 @@ Une commande est toujours rattachée à la **session de caisse ouverte** et à s
     "counter_number": null,
     "guests_count": 4,
     "total_ttc_xof": 9500,
-    "total_ht_xof": 8051,
-    "total_vat_xof": 1449,
+    "total_ht_xof": 9500,
+    "total_vat_xof": 0,
     "paid_xof": 0,
     "due_xof": 9500,
     "opened_at": "2026-09-30T12:04:10Z",

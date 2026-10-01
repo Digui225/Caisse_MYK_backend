@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from caisse.errors import NotFoundError
 from caisse.models.catalog import Category, Product
+from caisse.repositories import settings as settings_repo
 from caisse.services import audit_service
 from caisse.services.audit_service import RequestContext
 
@@ -15,7 +16,7 @@ def create_custom_product(
     name: str,
     price_xof: int,
     category_id: uuid.UUID,
-    vat_rate: Decimal,
+    vat_rate: Decimal | None,
     actor_id: uuid.UUID,
     ctx: RequestContext,
 ) -> Product:
@@ -29,7 +30,7 @@ def create_custom_product(
         name=name,
         short_name=name[:20].rstrip(),
         price_xof=price_xof,
-        vat_rate=vat_rate,
+        vat_rate=settings_repo.default_vat_rate(db) if vat_rate is None else vat_rate,
         track_stock=False,
         is_custom=True,
         is_active=True,

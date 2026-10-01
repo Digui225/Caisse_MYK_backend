@@ -34,7 +34,7 @@ class Product(UUIDPk, Timestamps, Base):
     name: Mapped[str] = mapped_column(String(120))
     short_name: Mapped[str] = mapped_column(String(20))  # libellé ticket
     price_xof: Mapped[int]
-    vat_rate: Mapped[Decimal] = mapped_column(Numeric(4, 2), default=Decimal("18.00"))
+    vat_rate: Mapped[Decimal] = mapped_column(Numeric(4, 2), default=Decimal("0.00"))
     track_stock: Mapped[bool] = mapped_column(default=False)
     is_custom: Mapped[bool] = mapped_column(default=False)  # produit créé à la volée
     is_active: Mapped[bool] = mapped_column(default=True)

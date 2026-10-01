@@ -39,7 +39,7 @@ def test_products_with_stock(client: TestClient, db: Session, make_user) -> None
     products = client.get("/api/v1/products", headers=headers).json()["items"]
     by_name = {p["name"]: p for p in products}
     assert by_name["Poisson braisé"]["price_xof"] == 3500
-    assert by_name["Poisson braisé"]["vat_rate"] == 18.0
+    assert by_name["Poisson braisé"]["vat_rate"] == 0.0  # régime TEE
     assert by_name["Poisson braisé"]["stock_quantity"] is None
     assert by_name["Sucrerie 33cl"]["stock_quantity"] == 48.0
     cats = client.get("/api/v1/categories", headers=headers).json()["items"]
@@ -125,3 +125,17 @@ def test_db_enforces_one_active_order_per_table(db: Session, make_user) -> None:
     with pytest.raises(IntegrityError):
         db.commit()
     db.rollback()
+
+
+def test_cli_set_vat_rate_updates_default_and_products(db: Session) -> None:
+    from decimal import Decimal
+
+    from caisse.cli import main
+    from caisse.models import AppSetting, Product
+
+    load_demo_menu(db)
+    db.commit()
+    main(["set-vat-rate", "18", "--all-products"])
+    db.expire_all()
+    assert db.get(AppSetting, "vat.default_rate").value == "18.00"  # type: ignore[union-attr]
+    assert {p.vat_rate for p in db.query(Product)} == {Decimal("18.00")}

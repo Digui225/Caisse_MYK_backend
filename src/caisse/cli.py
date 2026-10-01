@@ -6,6 +6,7 @@ python -m caisse.cli reset-pin --name "Awa"
 python -m caisse.cli seed --demo
 python -m caisse.cli create-tables --count 15 --zone Salle
 python -m caisse.cli import-catalog /data/menu.csv
+python -m caisse.cli set-vat-rate 0 --all-products
 python -m caisse.cli fne-probe --point-of-sale "..." --client-phone ... --client-email ... --yes
 python -m caisse.cli fne-probe ... --template B2B --client-ncc 9502363N --client-name "SOCIETE X"
 """
@@ -28,11 +29,13 @@ from caisse.domain.enums import CategoryKind, UserRole
 from caisse.domain.fne import FneTemplate
 from caisse.errors import DomainError
 from caisse.models.catalog import Category, Product
+from caisse.models.settings import AppSetting
 from caisse.models.stock import StockItem
 from caisse.models.table import RestaurantTable
+from caisse.repositories import settings as settings_repo
 from caisse.repositories import users as users_repo
 from caisse.seeds.defaults import ensure_defaults
-from caisse.services import user_service
+from caisse.services import audit_service, user_service
 from caisse.services.audit_service import RequestContext
 
 CLI_CTX = RequestContext(device_id="cli")
@@ -120,6 +123,7 @@ def cmd_import_catalog(db: Session, args: argparse.Namespace) -> None:
     """CSV : categorie,nom,prix_xof,suivi_stock,groupe_fiscal (en-tête obligatoire)."""
     path = Path(args.csv)
     created = 0
+    vat_rate = settings_repo.default_vat_rate(db)
     with path.open(newline="", encoding="utf-8-sig") as fh:
         for line_no, row in enumerate(csv.DictReader(fh), start=2):
             try:
@@ -147,7 +151,7 @@ def cmd_import_catalog(db: Session, args: argparse.Namespace) -> None:
                 short_name=name[:20],
                 price_xof=price,
                 track_stock=track,
-                vat_rate=Decimal("18.00"),
+                vat_rate=vat_rate,
             )
             db.add(product)
             db.flush()
@@ -156,6 +160,39 @@ def cmd_import_catalog(db: Session, args: argparse.Namespace) -> None:
             created += 1
     db.commit()
     print(f"{created} produit(s) importé(s).")
+
+
+def cmd_set_vat_rate(db: Session, args: argparse.Namespace) -> None:
+    """Taux de TVA par défaut (`vat.default_rate`) et, avec `--all-products`, taux de tous les
+    produits. Les commandes déjà saisies gardent le taux figé sur leurs lignes."""
+    try:
+        rate = Decimal(args.rate).quantize(Decimal("0.01"))
+    except ArithmeticError:
+        sys.exit(f"Taux invalide : {args.rate}")
+    if not Decimal(0) <= rate < Decimal(100):
+        sys.exit("Le taux doit être compris entre 0 et 99,99.")
+    setting = db.get(AppSetting, "vat.default_rate")
+    before = setting.value if setting else None
+    if setting is None:
+        db.add(AppSetting(key="vat.default_rate", value=str(rate)))
+    else:
+        setting.value = str(rate)
+    changed = 0
+    if args.all_products:
+        for product in db.scalars(select(Product).where(Product.vat_rate != rate)):
+            product.vat_rate = rate
+            changed += 1
+    audit_service.log(
+        db,
+        "settings.vat_rate",
+        ctx=CLI_CTX,
+        entity="settings",
+        entity_id="vat.default_rate",
+        before={"vat.default_rate": before},
+        after={"vat.default_rate": str(rate), "products_changed": changed},
+    )
+    db.commit()
+    print(f"Taux par défaut : {rate} %. Produits modifiés : {changed}.")
 
 
 PROBE_LINES = [
@@ -262,6 +299,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--zone", default="Salle")
     p = sub.add_parser("import-catalog", help="Importer le menu depuis un CSV")
     p.add_argument("csv")
+    p = sub.add_parser("set-vat-rate", help="Taux de TVA par défaut (et des produits)")
+    p.add_argument("rate", help="en %, ex. 0 (régime TEE) ou 18")
+    p.add_argument("--all-products", action="store_true", help="appliquer à tous les produits")
     p = sub.add_parser("fne-probe", help="Sonde de l'API FNE de test (consomme des stickers)")
     p.add_argument("--point-of-sale", required=True, help="tel que configuré dans l'espace FNE")
     p.add_argument(
@@ -291,6 +331,7 @@ def main(argv: list[str] | None = None) -> None:
         "seed": cmd_seed,
         "create-tables": cmd_create_tables,
         "import-catalog": cmd_import_catalog,
+        "set-vat-rate": cmd_set_vat_rate,
     }[args.command]
     with get_sessionmaker()() as db:
         try:

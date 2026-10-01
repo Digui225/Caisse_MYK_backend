@@ -184,7 +184,8 @@ def test_issue_b2c_certifies_once(
     assert sent["pointOfSale"] == "CAISSE-1"
     assert sent["clientCompanyName"] == "CLIENT DIVERS"
     assert sent["clientSellerName"] == "Awa Koné"
-    assert sent["items"][0]["taxes"] == ["TVA"]
+    assert sent["items"][0]["taxes"] == ["TVAD"]  # régime TEE
+    assert sent["items"][0]["amount"] == 3500  # HT = TTC
     assert sent["items"][0]["measurementUnit"] == "U"
 
     again = _issue(fne_client, setup["cashier"], order["id"])

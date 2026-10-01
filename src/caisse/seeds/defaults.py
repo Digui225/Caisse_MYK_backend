@@ -18,7 +18,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "rccm": "",
     },
     "receipt.footer": "Merci de votre visite",
-    "vat.default_rate": "18.00",
+    # régime TEE : pas de TVA (TVAD sur la FNE) ; 18.00 pour un établissement assujetti
+    "vat.default_rate": "0.00",
     "cash.rounding_xof": 5,
     "cash.denominations_xof": [10000, 5000, 2000, 1000, 500, 250, 200, 100, 50, 25, 10, 5],
     "fne.mode": "manual",

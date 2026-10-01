@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -79,10 +80,10 @@ def test_table_order_totals_and_occupation(client: TestClient, setup: dict[str, 
     _add(client, cashier, order["id"], p["Poisson braisé"], 2)
     _add(client, cashier, order["id"], p["Attiéké"])
     order = _add(client, cashier, order["id"], p["Sucrerie 33cl"], 3)
-    # exemple du contrat : 9 500 TTC → 8 051 HT + 1 449 TVA
+    # régime TEE (taux par défaut 0 %) : HT = TTC, pas de TVA
     assert order["total_ttc_xof"] == 9500
-    assert order["total_ht_xof"] == 8051
-    assert order["total_vat_xof"] == 1449
+    assert order["total_ht_xof"] == 9500
+    assert order["total_vat_xof"] == 0
     assert order["due_xof"] == 9500
     assert [(i["name"], i["quantity"], i["line_total_xof"]) for i in order["items"]] == [
         ("Poisson braisé", 2, 7000),
@@ -100,6 +101,25 @@ def test_table_order_totals_and_occupation(client: TestClient, setup: dict[str, 
     assert by_label["1"]["status"] == "OCCUPIED"
     assert by_label["1"]["order"]["total_ttc_xof"] == 9500
     assert by_label["2"]["status"] == "FREE"
+
+
+def test_vat_split_for_taxable_products(
+    client: TestClient, db: Session, setup: dict[str, Any]
+) -> None:
+    """Établissement assujetti : exemple du contrat, 9 500 TTC à 18 % → 8 051 HT + 1 449 TVA."""
+    for product in db.scalars(select(Product)):
+        product.vat_rate = Decimal("18.00")
+    db.commit()
+    cashier, p = setup["cashier"], setup["products"]
+    order = _create(client, cashier, table_id=None)
+    _add(client, cashier, order["id"], p["Poisson braisé"], 2)
+    _add(client, cashier, order["id"], p["Attiéké"])
+    order = _add(client, cashier, order["id"], p["Sucrerie 33cl"], 3)
+    assert (order["total_ttc_xof"], order["total_ht_xof"], order["total_vat_xof"]) == (
+        9500,
+        8051,
+        1449,
+    )
 
 
 def test_takeaway_gets_counter_number(client: TestClient, setup: dict[str, Any]) -> None:

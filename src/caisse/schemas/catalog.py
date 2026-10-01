@@ -27,7 +27,7 @@ class ProductOut(Schema):
     )
     category_id: uuid.UUID = Field(description="Catégorie du produit")
     price_xof: int = Field(description="Prix TTC, en francs CFA entiers", examples=[1000])
-    vat_rate: float = Field(description="Taux de TVA, en pourcentage", examples=[18.0])
+    vat_rate: float = Field(description="Taux de TVA, en pourcentage", examples=[0.0])
     track_stock: bool = Field(description="Le stock de ce produit est suivi")
     stock_quantity: float | None = Field(
         default=None, description="Quantité en stock ; null si le stock n'est pas suivi"
@@ -48,6 +48,10 @@ class CustomProductCreate(Schema):
     name: str = Field(min_length=1, max_length=120, description="Libellé de l'article libre")
     price_xof: int = Field(ge=0, description="Prix TTC, en francs CFA entiers")
     category_id: uuid.UUID = Field(description="Catégorie (sert au récapitulatif fiscal)")
-    vat_rate: Decimal = Field(
-        default=Decimal("18.00"), ge=0, le=99, decimal_places=2, description="Taux de TVA, en %"
+    vat_rate: Decimal | None = Field(
+        default=None,
+        ge=0,
+        le=99,
+        decimal_places=2,
+        description="Taux de TVA, en % ; défaut : paramètre `vat.default_rate` (0 % en régime TEE)",
     )
