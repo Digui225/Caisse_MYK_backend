@@ -7,6 +7,7 @@ python -m caisse.cli seed --demo
 python -m caisse.cli create-tables --count 15 --zone Salle
 python -m caisse.cli import-catalog /data/menu.csv
 python -m caisse.cli fne-probe --point-of-sale "..." --client-phone ... --client-email ... --yes
+python -m caisse.cli fne-probe ... --template B2B --client-ncc 9502363N --client-name "SOCIETE X"
 """
 
 import argparse
@@ -24,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from caisse.database import get_sessionmaker
 from caisse.domain.enums import CategoryKind, UserRole
+from caisse.domain.fne import FneTemplate
 from caisse.errors import DomainError
 from caisse.models.catalog import Category, Product
 from caisse.models.stock import StockItem
@@ -164,9 +166,9 @@ PROBE_LINES = [
 
 
 def cmd_fne_probe(args: argparse.Namespace) -> None:
-    """Sonde de l'environnement FNE de test (PLAN-FNE phase 1) : une facture B2C, puis
-    éventuellement un avoir d'une unité sur le premier article. Requêtes et réponses sont
-    écrites dans `--out` (sans la clé API)."""
+    """Sonde de l'environnement FNE de test (PLAN-FNE phase 1) : une facture (B2C par défaut,
+    ou B2B avec `--client-ncc`), puis éventuellement un avoir d'une unité sur le premier article.
+    Requêtes et réponses sont écrites dans `--out` (sans la clé API)."""
     from caisse.config import get_settings
     from caisse.domain import fne
     from caisse.domain.ports import FneError
@@ -175,7 +177,7 @@ def cmd_fne_probe(args: argparse.Namespace) -> None:
     settings = get_settings()
     if not settings.fne_api_base_url or not settings.fne_api_key:
         sys.exit("FNE_API_BASE_URL et FNE_API_KEY doivent être définis (fichier .env).")
-    print(f"URL FNE : {settings.fne_api_base_url}")
+    print(f"URL FNE : {settings.fne_api_base_url} — modèle {args.template}")
     if not args.yes:
         sys.exit("Chaque appel consomme un sticker : relancez avec --yes pour confirmer.")
 
@@ -197,9 +199,12 @@ def cmd_fne_probe(args: argparse.Namespace) -> None:
         request = fne.build_sale_request(
             lines=lines,
             client=fne.FneClient(
-                company_name=args.client_name, phone=args.client_phone, email=args.client_email
+                company_name=args.client_name,
+                phone=args.client_phone,
+                email=args.client_email,
+                ncc=args.client_ncc,
             ),
-            template=fne.FneTemplate.B2C,
+            template=fne.FneTemplate(args.template),
             payment_method="cash",
             issuer=fne.FneIssuer(
                 point_of_sale=args.point_of_sale, establishment=args.establishment
@@ -264,7 +269,9 @@ def main(argv: list[str] | None = None) -> None:
         default="RESTAURANT CHEZ SYLLA PLUS",
         help="tel que configuré dans l'espace FNE",
     )
+    p.add_argument("--template", choices=[t.value for t in FneTemplate], default="B2C")
     p.add_argument("--client-name", default="CLIENT DIVERS")
+    p.add_argument("--client-ncc", help="NCC du client, obligatoire en B2B")
     p.add_argument("--client-phone", required=True)
     p.add_argument("--client-email", required=True)
     p.add_argument("--ht-decimals", type=int, default=4, help="précision du prix HT envoyé")
