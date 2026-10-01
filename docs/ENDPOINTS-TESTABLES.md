@@ -1,14 +1,27 @@
-# Endpoints testables — état au 27/09/2026
+# Endpoints testables — état au 30/09/2026
 
-Ce document décrit les **18 routes réellement implémentées** dans `caisse-backend`, telles que le code les expose aujourd'hui. Le contrat cible complet est dans [`03-CONTRAT-API.md`](../../projet_caisse_MYK/03-CONTRAT-API.md). Toute route du contrat absente d'ici renvoie `404 NOT_FOUND`.
+Ce document décrit les **30 routes réellement implémentées** dans `caisse-backend`, telles que le code les expose aujourd'hui. Le contrat cible complet est dans [`03-CONTRAT-API.md`](../../projet_caisse_MYK/03-CONTRAT-API.md). Toute route du contrat absente d'ici renvoie `404 NOT_FOUND`.
 
-| Groupe | Routes |
-|---|---|
-| [Santé](#1-santé) | `GET /health`, `GET /health/ready` (servies aussi sous `/api/v1`) |
-| [Authentification](#2-authentification) | `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/override` |
-| [Utilisateurs](#3-utilisateurs) | `GET /users`, `POST /users`, `PATCH /users/{id}`, `POST /users/{id}/pin` |
-| [Catalogue](#4-catalogue) | `GET /categories`, `GET /products` |
-| [Tables](#5-tables) | `GET /tables`, `GET /tables/board` |
+## Sommaire
+
+| § | Section | Routes | En bref |
+|---|---|---|---|
+| 0 | [Conventions communes](#0-conventions-communes) | — | Adresses, en-têtes, rôles, format des erreurs et catalogue des codes |
+| 1 | [Santé](#1-santé) | `GET /health`, `GET /health/ready` | L'API répond, la base et l'imprimante sont joignables |
+| 2 | [Authentification](#2-authentification) | `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/override` | Connexion par PIN, jetons, blocage par poste, autorisation ponctuelle d'un responsable |
+| 3 | [Utilisateurs](#3-utilisateurs) | `GET /users`, `POST /users`, `PATCH /users/{id}`, `POST /users/{id}/pin` | Gestion des comptes (ADMIN) |
+| 4 | [Catalogue](#4-catalogue) | `GET /categories`, `GET /products`, `POST /products/custom` | Menu en lecture, article libre |
+| 5 | [Tables](#5-tables) | `GET /tables`, `GET /tables/board` | Salle et plan de salle (écran d'accueil) |
+| 6 | [Sessions de caisse](#6-sessions-de-caisse) | `GET /cash-sessions/current`, `POST /cash-sessions`, `GET …/{id}/x-report`, `POST …/{id}/close`, `GET …/{id}/z-report`, `GET /cash-sessions`, `POST …/{id}/movements` | Ouverture, mouvements de tiroir, rapports X et Z, clôture |
+| 7 | [Commandes](#7-commandes) | `POST /orders`, `GET /orders`, `GET /orders/{id}`, `POST …/{id}/items`, `PATCH …/items/{item_id}`, `DELETE …/items/{item_id}`, `POST …/{id}/cancel` | Prise de commande, lignes (ajout, quantité, retrait), annulation sous autorisation |
+| 8 | [Scénario de test complet](#8-scénario-de-test-complet-curl--jq) | — | Tout le parcours en curl, de la connexion à la clôture |
+| 9 | [Pas encore testable](#9-pas-encore-testable) | — | Routes du contrat pas encore implémentées |
+
+**Par où commencer :**
+
+1. Préparer la base avec `docker compose exec api python -m caisse.cli …` : `bootstrap` (caisse n° 1), `create-user` (un ADMIN), `seed --demo` (menu + 15 tables).
+2. Ouvrir Swagger (http://localhost:8001/docs), se connecter avec `POST /auth/login`, coller l'`access_token` dans **Authorize**.
+3. Suivre le parcours d'une journée : ouvrir la caisse (§6) → prendre des commandes (§7) → clôturer (§6). Le [§8](#8-scénario-de-test-complet-curl--jq) fait la même chose en curl.
 
 ---
 
@@ -30,6 +43,8 @@ Ce document décrit les **18 routes réellement implémentées** dans `caisse-ba
 | `Authorization: Bearer <access_token>` | requête | Obligatoire sur toutes les routes marquées « connecté » ou « ADMIN » |
 | `X-Device-Id` | requête | Facultatif. Identifie le poste pour la temporisation des PIN (`/auth/override`) et pour l'audit. Sans lui, le poste est compté comme `unknown`. |
 | `X-Request-Id` | requête / réponse | Facultatif en entrée. Toujours renvoyé en sortie, généré s'il est absent. Il apparaît dans les logs et dans les erreurs. |
+| `X-Override-Token` | requête | Jeton obtenu par `POST /auth/override`. Permet à un CAISSIER d'annuler une commande (action `order.cancel`). Inutile pour un RESPONSABLE ou un ADMIN. |
+| `Idempotency-Key` | requête | **Obligatoire** sur `POST /cash-sessions` et `POST /cash-sessions/{id}/close`. Rejouer la même clé avec le même corps renvoie la réponse d'origine en `200`, avec l'en-tête `Idempotent-Replay: true` en retour. |
 
 ### Rôles
 
@@ -83,6 +98,15 @@ Le front doit se fier à **`code`**, qui est stable. `title` et `detail` sont de
 | `OVERRIDE_REQUIRED` | 403 | Le PIN saisi pour un override n'a pas le rôle requis |
 | `NOT_FOUND` | 404 | Ressource ou route inexistante |
 | `PIN_ALREADY_USED` | 409 | PIN déjà attribué à un autre utilisateur actif |
+| `NO_OPEN_SESSION` | 409 | Aucune session de caisse ouverte, ou mouvement demandé sur une session déjà clôturée |
+| `SESSION_ALREADY_OPEN` | 409 | Une session est déjà ouverte sur cette caisse |
+| `SESSION_ALREADY_CLOSED` | 409 | La session visée est déjà clôturée |
+| `SESSION_NOT_CLOSED` | 409 | Rapport Z demandé avant la clôture |
+| `SESSION_HAS_OPEN_ORDERS` | 409 | Clôture refusée : des commandes ne sont pas soldées (`meta.open_orders[]`) |
+| `BUSINESS_DATE_MISMATCH` | 409 | Une session clôturée existe déjà pour cette journée comptable ; rejouer avec `confirm_business_date: true` |
+| `IDEMPOTENCY_CONFLICT` | 409 | Même `Idempotency-Key`, corps différent |
+| `TABLE_ALREADY_OCCUPIED` | 409 | La table porte déjà une commande active (`meta.order_id` : celle à ouvrir) |
+| `ORDER_NOT_EDITABLE` | 409 | Commande soldée ou annulée (`meta.status`), ou modification qui ferait passer le total sous le montant déjà encaissé |
 | `INTERNAL_ERROR` | 500 | Erreur imprévue. La trace est dans les logs, jamais dans la réponse. |
 
 ---
@@ -163,7 +187,7 @@ Réponse `200` :
 }
 ```
 
-`open_session` vaut `{id, business_date, cash_register_id}` si une session de caisse est ouverte. Elle est toujours `null` pour l'instant, car l'ouverture de session n'est pas encore implémentée.
+`open_session` vaut `{id, business_date, cash_register_id}` si une session de caisse est ouverte (voir [§6](#6-sessions-de-caisse)), `null` sinon.
 
 Erreurs :
 
@@ -255,6 +279,8 @@ Réponse `200` :
 }
 ```
 
+`open_session` reflète la session de caisse ouverte, comme sur `/auth/login` (voir [§6](#6-sessions-de-caisse)).
+
 | Code | Cas |
 |---|---|
 | `401 TOKEN_EXPIRED` | Pas d'en-tête `Authorization` (`detail: "Authentification requise"`), jeton expiré ou utilisateur désactivé |
@@ -276,11 +302,11 @@ Corps :
 | Champ | Type | Contraintes |
 |---|---|---|
 | `pin` | chaîne | PIN du responsable, 4 à 8 chiffres |
-| `action` | chaîne | 1 à 64 caractères, par ex. `order.remove_item` |
+| `action` | chaîne | 1 à 64 caractères, par ex. `order.cancel` |
 | `required_role` | `RESPONSABLE` \| `ADMIN` \| `CAISSIER` | Facultatif, `RESPONSABLE` par défaut |
 
 ```json
-{ "pin": "654321", "action": "order.remove_item", "required_role": "RESPONSABLE" }
+{ "pin": "654321", "action": "order.cancel", "required_role": "RESPONSABLE" }
 ```
 
 Réponse `200` :
@@ -300,8 +326,8 @@ Réponse `200` :
 | `403 OVERRIDE_REQUIRED` | PIN valide mais rôle insuffisant, par ex. un PIN de caissier | `required_role` |
 | `401 TOKEN_EXPIRED` | Demandeur non connecté |  |
 
-> **Limite actuelle :** on peut *obtenir* un jeton d'override, mais **aucune route ne le consomme encore**. Le retrait de ligne et l'annulation arriveront avec les commandes (L3), où il passera dans l'en-tête `X-Override-Token`. Pour l'instant, on ne teste que la délivrance et ses refus.
->
+Le jeton se consomme dans l'en-tête `X-Override-Token` de `POST /orders/{id}/cancel` (action `order.cancel`), voir [§7](#7-commandes). Il est refusé (`403 OVERRIDE_REQUIRED`, `meta.reason`) s'il est expiré, déjà utilisé, demandé pour une autre action ou par un autre utilisateur.
+
 > Rien n'empêche un responsable de s'autoriser lui-même : avec le seul compte ADMIN, on peut donc tester le cas nominal.
 
 Trace dans `audit_logs` : `auth.override_granted`, avec le demandeur et le responsable.
@@ -407,7 +433,7 @@ Trace dans `audit_logs` : `user.pin_reset`.
 
 ## 4. Catalogue
 
-Préfixe : `/api/v1` · **Accès : connecté** · **Lecture seule** : la création et la modification du catalogue ne sont pas encore implémentées.
+Préfixe : `/api/v1` · **Accès : connecté** · La gestion du catalogue (création, modification, prix) n'est pas encore implémentée ; seul l'article libre (`POST /products/custom`) peut être créé.
 
 ### `GET /categories`
 
@@ -495,6 +521,32 @@ curl -s "localhost:8001/api/v1/products?search=jus" -H "Authorization: Bearer $T
   | jq '.items[] | {name, price_xof, stock_quantity}'
 ```
 
+### `POST /products/custom` — article libre
+
+Produit créé à la volée pendant une commande (plat du jour, poisson au poids…). Il a `is_custom: true`, n'apparaît **jamais** dans `GET /products`, et s'ajoute ensuite à la commande avec `POST /orders/{id}/items`.
+
+Corps :
+
+| Champ | Type | Contraintes |
+|---|---|---|
+| `name` | chaîne | 1 à 120 caractères. Le libellé ticket (`short_name`) en reprend les 20 premiers. |
+| `price_xof` | entier | ≥ 0, prix TTC |
+| `category_id` | UUID | Catégorie active ; elle fixe le groupe fiscal de la ligne |
+| `vat_rate` | décimal | Facultatif, `18.00` par défaut |
+
+```json
+{ "name": "Poisson capitaine 1 kg", "price_xof": 9000, "category_id": "c1d2…" }
+```
+
+Réponse `201` : le produit, au format de `GET /products` (`stock_quantity: null`, `track_stock: false`).
+
+| Code | Cas |
+|---|---|
+| `404 NOT_FOUND` | Catégorie inconnue ou désactivée |
+| `422 VALIDATION_ERROR` | Nom vide, prix négatif |
+
+Trace dans `audit_logs` : `product.create_custom`.
+
 ---
 
 ## 5. Tables
@@ -562,11 +614,406 @@ Quand une table a une commande active (`OPEN` ou `PARTIALLY_PAID`) :
 | `summary.orders_count` | Nombre de commandes payées de la journée |
 | `summary.open_orders` | Nombre de commandes encore ouvertes |
 
-> **Limite actuelle :** on ne peut encore créer ni session de caisse ni commande. On obtient donc toujours `business_date: null`, les compteurs à `0` et les 15 tables en `FREE`. On peut vérifier la forme de la réponse, pas le cas « table occupée ».
+À tester : ouvrir une session ([§6](#6-sessions-de-caisse)) → `business_date` se remplit ; créer une commande sur une table ([§7](#7-commandes)) → la table passe en `OCCUPIED` avec son total, et `summary.open_orders` augmente ; l'annuler → la table redevient `FREE`.
+
+> **Limite actuelle :** l'encaissement n'existe pas encore, donc aucune commande ne peut être `PAID` : `revenue_today_xof` et `orders_count` restent à `0`.
 
 ---
 
-## 6. Scénario de test complet (curl + jq)
+## 6. Sessions de caisse
+
+Préfixe : `/api/v1/cash-sessions` · **Accès : connecté**, sauf `GET /cash-sessions` (historique) réservé au **RESPONSABLE**.
+
+MVP mono-poste : il n'y a qu'une caisse (`cash_register_id` unique, créée par `python -m caisse.cli bootstrap`) et jamais plus d'une session non clôturée à la fois, tous postes confondus.
+
+Objet renvoyé (`CashSessionOut`) :
+
+```json
+{
+  "id": "f1a2…",
+  "cash_register_id": "b3c4…",
+  "status": "OPEN",
+  "business_date": "2026-09-30",
+  "opening_float_xof": 20000,
+  "opened_at": "2026-09-30T08:00:00Z",
+  "closed_at": null,
+  "z_number": null,
+  "counted_cash_xof": null,
+  "expected_cash_xof": null,
+  "variance_xof": null,
+  "notes": null
+}
+```
+
+### `GET /cash-sessions/current` — session ouverte sur ce poste
+
+Réponse `200` : `CashSessionOut`.
+
+| Code | Cas |
+|---|---|
+| `409 NO_OPEN_SESSION` | Aucune session ouverte actuellement |
+
+### `POST /cash-sessions` — ouvrir une session
+
+**Idempotent** : en-tête `Idempotency-Key` obligatoire.
+
+Corps :
+
+| Champ | Type | Contraintes |
+|---|---|---|
+| `cash_register_id` | UUID | Caisse à ouvrir |
+| `opening_float_xof` | entier | ≥ 0, fonds de caisse initial |
+| `business_date` | date | Facultatif, défaut : date du jour (UTC) |
+| `confirm_business_date` | booléen | Facultatif, défaut `false` — voir `BUSINESS_DATE_MISMATCH` |
+
+```json
+{ "cash_register_id": "b3c4…", "opening_float_xof": 20000 }
+```
+
+Réponse `201` : `CashSessionOut`. Rejeu de la même clé avec le même corps → `200` + en-tête `Idempotent-Replay: true` + le même corps.
+
+| Code | Cas | `meta` |
+|---|---|---|
+| `409 SESSION_ALREADY_OPEN` | Une session est déjà ouverte sur cette caisse | |
+| `409 BUSINESS_DATE_MISMATCH` | Une session déjà clôturée existe pour cette caisse et cette `business_date` | `business_date`, `existing_session_id` — rejouer avec `confirm_business_date: true` |
+| `409 IDEMPOTENCY_CONFLICT` | Même `Idempotency-Key`, corps différent | `key` |
+
+À tester :
+- ouverture → `201` ; rejeu même clé/même corps → `200` + `Idempotent-Replay: true` ; même clé, corps différent → `409 IDEMPOTENCY_CONFLICT` ;
+- deuxième ouverture (clé différente) sur la même caisse → `409 SESSION_ALREADY_OPEN`.
+
+Trace dans `audit_logs` : `cash_session.open`.
+
+### `GET /cash-sessions/{id}/x-report` — rapport X (lecture seule)
+
+Réponse `200` (`XReportOut`) : agrégats de la session **en cours**, recalculés à chaque appel, sans aucun effet de bord.
+
+```json
+{
+  "session_id": "f1a2…",
+  "business_date": "2026-09-30",
+  "expected_cash_xof": 23000,
+  "totals": {
+    "gross_ttc_xof": 0, "vat_xof": 0, "orders_count": 0,
+    "by_payment_method": [], "by_fiscal_group": [],
+    "controls": { "cancelled_orders": 0, "removed_items": 0, "reprints": 0 }
+  }
+}
+```
+
+Seules les commandes **soldées** (`PAID`) comptent dans le chiffre d'affaires et la ventilation par groupe fiscal ; `controls` compte les commandes annulées et les lignes retirées.
+
+> Tant que l'encaissement n'est pas implémenté ([§9](#9-pas-encore-testable)), aucune commande n'est `PAID` : les montants de `totals` restent à zéro et `expected_cash_xof` ne reflète que `opening_float_xof` et les mouvements de tiroir. `controls.cancelled_orders` et `controls.removed_items`, eux, sont déjà testables.
+
+| Code | Cas |
+|---|---|
+| `404 NOT_FOUND` | Session inconnue |
+
+### `POST /cash-sessions/{id}/close` — clôturer la session (Z)
+
+**Idempotent** : en-tête `Idempotency-Key` obligatoire.
+
+Corps :
+
+| Champ | Type | Contraintes |
+|---|---|---|
+| `counted_breakdown` | objet | Comptage par dénomination, ex. `{"10000": 2, "1000": 3}` |
+| `notes` | chaîne \| `null` | Facultatif, ≤ 500 caractères |
+
+```json
+{ "counted_breakdown": { "10000": 2, "1000": 3 }, "notes": "RAS" }
+```
+
+Réponse `201` (`ZReportOut`) :
+
+```json
+{
+  "z_number": 1,
+  "business_date": "2026-09-30",
+  "expected_cash_xof": 23000,
+  "counted_cash_xof": 23000,
+  "variance_xof": 0,
+  "totals": { "...": "identique à x-report, figé" },
+  "print_job_id": null
+}
+```
+
+`expected_cash_xof = opening_float_xof + encaissements espèces + entrées − sorties de tiroir`. `print_job_id` reste `null` tant que l'impression ([§9](#9-pas-encore-testable)) n'est pas implémentée.
+
+| Code | Cas | `meta` |
+|---|---|---|
+| `404 NOT_FOUND` | Session inconnue | |
+| `409 SESSION_ALREADY_CLOSED` | Déjà clôturée (hors rejeu idempotent) | |
+| `409 SESSION_HAS_OPEN_ORDERS` | Des commandes ne sont pas soldées | `open_orders[]` |
+| `409 IDEMPOTENCY_CONFLICT` | Même `Idempotency-Key`, corps différent | `key` |
+
+À tester :
+- clôture avec un comptage exact → `variance_xof: 0`, `z_number` commence à `1` et s'incrémente à chaque clôture sur la même caisse ;
+- comptage différent du théorique → `variance_xof` non nul, signé (compté − théorique) ;
+- rejeu de la même clé → `200` + `Idempotent-Replay: true`.
+
+Trace dans `audit_logs` : `cash_session.close`.
+
+### `GET /cash-sessions/{id}/z-report` — rapport Z figé
+
+Réponse `200` : `ZReportOut`, identique à la réponse de clôture, relue depuis `totals_snapshot` (aucun recalcul).
+
+| Code | Cas |
+|---|---|
+| `404 NOT_FOUND` | Session inconnue |
+| `409 SESSION_NOT_CLOSED` | La session n'est pas encore clôturée |
+
+### `GET /cash-sessions` — historique
+
+**Accès : RESPONSABLE**, sinon `403 INSUFFICIENT_PRIVILEGE`.
+
+Réponse `200` : `{"items": [CashSessionOut…], "next_cursor": null}`, sessions **clôturées** uniquement, les plus récentes en premier.
+
+### `POST /cash-sessions/{id}/movements` — entrée ou sortie de tiroir
+
+Pas d'`Idempotency-Key` (absent du contrat pour cette route).
+
+Corps :
+
+| Champ | Type | Contraintes |
+|---|---|---|
+| `type` | `IN` \| `OUT` | Entrée ou sortie |
+| `amount_xof` | entier | > 0 |
+| `reason` | chaîne | 1 à 255 caractères, obligatoire |
+
+```json
+{ "type": "OUT", "amount_xof": 2000, "reason": "achat glace" }
+```
+
+Réponse `201` (`MovementResult`) :
+
+```json
+{
+  "movement": { "id": "…", "type": "OUT", "amount_xof": 2000, "reason": "achat glace", "created_at": "…" },
+  "session": { "...": "CashSessionOut à jour" }
+}
+```
+
+| Code | Cas |
+|---|---|
+| `404 NOT_FOUND` | Session inconnue |
+| `409 NO_OPEN_SESSION` | La session n'est plus `OPEN` (déjà clôturée) |
+
+Trace dans `audit_logs` : `cash_session.movement`.
+
+```bash
+curl -s -X POST $API/cash-sessions -H "$AUTH" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuidgen)" -d '{"cash_register_id":"'"$REGISTER_ID"'","opening_float_xof":20000}' | jq
+```
+
+---
+
+## 7. Commandes
+
+Préfixe : `/api/v1/orders` · **Accès : connecté**. Seule l'annulation d'une commande demande un responsable (ou un caissier avec un `X-Override-Token`).
+
+Une commande est toujours rattachée à la **session de caisse ouverte** et à sa journée comptable. Les montants sont **toujours recalculés par le backend** : le front n'additionne jamais rien.
+
+**Toutes les mutations** (création, ajout, modification, retrait, annulation) renvoient la commande complète (`OrderResult`) :
+
+```json
+{
+  "order": {
+    "id": "0a1b…",
+    "order_number": "2026-09-30-0001",
+    "status": "OPEN",
+    "business_date": "2026-09-30",
+    "table_id": "5e6f…",
+    "counter_number": null,
+    "guests_count": 4,
+    "total_ttc_xof": 9500,
+    "total_ht_xof": 8051,
+    "total_vat_xof": 1449,
+    "paid_xof": 0,
+    "due_xof": 9500,
+    "opened_at": "2026-09-30T12:04:10Z",
+    "paid_at": null,
+    "cancelled_at": null,
+    "cancelled_reason": null,
+    "items": [
+      {
+        "id": "7c8d…",
+        "product_id": "a9f0…",
+        "name": "Poisson braisé",
+        "unit_price_xof": 3500,
+        "quantity": 2,
+        "line_total_xof": 7000,
+        "note": "bien cuit",
+        "added_at": "2026-09-30T12:05:02Z"
+      }
+    ]
+  },
+  "warnings": []
+}
+```
+
+| Règle | Détail |
+|---|---|
+| Numérotation | `order_number` = `<journée>-<n° sur 4 chiffres>`, séquence par journée comptable |
+| Vente à emporter | `table_id: null` → `counter_number` attribué (« Comptoir n° X »), séquence par journée |
+| Une table, une commande | Au plus une commande `OPEN` / `PARTIALLY_PAID` par table, garanti en base |
+| Prix figé | Libellé, prix, TVA et groupe fiscal sont **copiés sur la ligne** à l'ajout : un changement de prix du menu ne touche pas les commandes en cours |
+| TVA | Calculée depuis le TTC, par taux : `ht = arrondi(ttc / (1 + taux))`, `tva = ttc − ht` |
+| Lignes modifiables | Uniquement en `OPEN` / `PARTIALLY_PAID`. Une fois soldée ou annulée, la commande est figée (`409 ORDER_NOT_EDITABLE`) |
+| Lignes retirées | Jamais supprimées : marquées retirées (qui, quand, motif), absentes de `items` et des totaux, comptées dans le rapport X/Z |
+
+### `POST /orders` — créer une commande
+
+Corps :
+
+| Champ | Type | Contraintes |
+|---|---|---|
+| `table_id` | UUID \| `null` | Table active ; `null` ou absent pour une vente à emporter |
+| `guests_count` | entier \| `null` | Facultatif, 1 à 99 |
+
+```json
+{ "table_id": "5e6f…", "guests_count": 4 }
+```
+
+Réponse `201` : `OrderResult`, sans lignes.
+
+| Code | Cas | `meta` |
+|---|---|---|
+| `409 NO_OPEN_SESSION` | Aucune session de caisse ouverte | |
+| `404 NOT_FOUND` | Table inconnue ou désactivée | `table_id` |
+| `409 TABLE_ALREADY_OCCUPIED` | La table a déjà une commande active | `order_id` : la commande à ouvrir à la place |
+
+Trace dans `audit_logs` : `order.create`.
+
+### `GET /orders` — lister les commandes d'une journée
+
+Paramètres de requête, facultatifs :
+
+| Paramètre | Effet |
+|---|---|
+| `business_date` | Journée comptable. Défaut : celle de la session ouverte, sinon le jour (UTC) |
+| `status` | `OPEN`, `PARTIALLY_PAID`, `PAID`, `CANCELLED`, `REFUNDED` |
+
+Réponse `200` : `{"items": [...], "next_cursor": null}`, les plus récentes en premier. Chaque élément a les mêmes champs que `order` ci-dessus **sans `items`** (détail : `GET /orders/{id}`).
+
+Utile pour retrouver les ventes à emporter en cours, qui n'apparaissent pas sur le plan de salle : `GET /orders?status=OPEN`.
+
+| Code | Cas |
+|---|---|
+| `403 INSUFFICIENT_PRIVILEGE` | Un CAISSIER demande une autre journée que celle de la session ouverte (historique réservé au RESPONSABLE) |
+
+### `GET /orders/{id}` — détail
+
+Réponse `200` : l'objet `order` complet, avec ses lignes actives. Erreur : `404 NOT_FOUND`.
+
+### `POST /orders/{id}/items` — ajouter une ligne
+
+Corps :
+
+| Champ | Type | Contraintes |
+|---|---|---|
+| `product_id` | UUID | Produit actif du menu, ou article libre |
+| `quantity` | entier | 1 à 999, `1` par défaut |
+| `note` | chaîne \| `null` | Facultatif, ≤ 255 caractères (« bien cuit », « sans piment ») |
+
+```json
+{ "product_id": "a9f0…", "quantity": 2, "note": "bien cuit" }
+```
+
+Réponse `201` : `OrderResult`. Ajouter deux fois le même produit crée **deux lignes** (les notes peuvent différer).
+
+| Code | Cas |
+|---|---|
+| `404 NOT_FOUND` | Commande ou produit inconnu |
+| `409 ORDER_NOT_EDITABLE` | Commande soldée ou annulée |
+| `422 VALIDATION_ERROR` | Produit désactivé (`meta.fields[0].type = "product_inactive"`), quantité hors bornes |
+
+### `PATCH /orders/{id}/items/{item_id}` — modifier une ligne
+
+Mise à jour partielle : un champ absent reste inchangé, `"note": null` efface la note.
+
+| Champ | Type |
+|---|---|
+| `quantity` | entier, 1 à 999 |
+| `note` | chaîne \| `null`, ≤ 255 caractères |
+
+```json
+{ "quantity": 3 }
+```
+
+Réponse `200` : `OrderResult`.
+
+| Code | Cas |
+|---|---|
+| `404 NOT_FOUND` | Commande inconnue, ou ligne inconnue / déjà retirée |
+| `409 ORDER_NOT_EDITABLE` | Commande soldée ou annulée |
+
+Trace dans `audit_logs` : `order.item_update`, avec quantité et note avant/après.
+
+#### Baisser une quantité ou retirer une ligne : quelle différence ?
+
+Exemple : une ligne « 3 × Poisson braisé = 10 500 ».
+
+| | Baisse de quantité (`PATCH`, 3 → 1) | Retrait de ligne (`DELETE`) |
+|---|---|---|
+| La ligne | Reste sur la commande, à 1 | Disparaît de la commande |
+| Total de la commande | − 7 000 | − 10 500 |
+| Autorisation d'un responsable | Non | Non |
+| Motif | Non demandé | **Obligatoire** |
+| Trace | `audit_logs` (`order.item_update`, avant/après) | `audit_logs` (`order.item_remove`) + ligne conservée en base, marquée retirée |
+| Compté dans le rapport X/Z (`controls.removed_items`) | **Non** | **Oui** |
+| Limite | Minimum 1 : pour aller à 0, il faut retirer la ligne | — |
+
+En résumé : la baisse corrige une quantité, le retrait annule un article. Les deux sont libres pour la caissière ; seul le retrait demande un motif et apparaît dans les contrôles du rapport Z.
+
+### `DELETE /orders/{id}/items/{item_id}?reason=…` — retirer une ligne
+
+**Accès : connecté**, sans autorisation de responsable (décision client du 30/09/2026). Le motif passe en **paramètre de requête** `reason` (1 à 255 caractères, obligatoire).
+
+Réponse `200` : `OrderResult`, la ligne n'est plus dans `items` et les totaux sont recalculés.
+
+| Code | Cas |
+|---|---|
+| `404 NOT_FOUND` | Commande inconnue, ou ligne inconnue / déjà retirée |
+| `409 ORDER_NOT_EDITABLE` | Commande soldée ou annulée |
+| `422 VALIDATION_ERROR` | `reason` absent ou vide |
+
+À tester : caissier sans `reason` → `422` ; avec `reason` → `200` et `controls.removed_items` augmente dans le rapport X ; retirer la même ligne une 2ᵉ fois → `404`.
+
+Trace dans `audit_logs` : `order.item_remove`, avec le produit, la quantité, le montant et le motif.
+
+### `POST /orders/{id}/cancel` — annuler une commande
+
+Corps :
+
+```json
+{ "reason": "client parti" }
+```
+
+| Utilisateur | Condition |
+|---|---|
+| RESPONSABLE, ADMIN | Direct |
+| CAISSIER | En-tête `X-Override-Token` obtenu par `POST /auth/override` avec `"action": "order.cancel"` |
+
+Réponse `200` : `OrderResult` avec `status: "CANCELLED"`, `cancelled_at` et `cancelled_reason` remplis, `due_xof: 0`. **La table est libérée** et la commande est figée.
+
+| Code | Cas | `meta` |
+|---|---|---|
+| `403 OVERRIDE_REQUIRED` | Caissier sans jeton valide | `action`, `reason` |
+| `404 NOT_FOUND` | Commande inconnue | |
+| `409 ORDER_NOT_EDITABLE` | Déjà soldée ou annulée (`status`), ou paiements déjà enregistrés (`reason: "has_payments"` — l'annulation avec remboursement viendra avec l'encaissement) | |
+
+À tester : caissier sans jeton → `403` ; avec le jeton du responsable → `200` ; **rejouer le même jeton** sur une autre commande → `403` ; responsable sans jeton → `200`.
+
+Trace dans `audit_logs` : `order.cancel`, avec le caissier (`user_id`) **et** le responsable qui a autorisé (`acting_as_user_id`).
+
+Trace dans `audit_logs` : `order.cancel`.
+
+> **Clôture de caisse :** une commande `OPEN` bloque la clôture (`409 SESSION_HAS_OPEN_ORDERS`). Tant que l'encaissement n'existe pas, il faut **annuler** les commandes de test avant de clôturer.
+
+---
+
+## 8. Scénario de test complet (curl + jq)
 
 À lancer dans un terminal. Remplacer `ADMIN_PIN` par le PIN de l'administrateur créé avec `caisse.cli create-user`.
 
@@ -608,9 +1055,9 @@ curl -s $API/users -H "Authorization: Bearer $CT" | jq '{status, code, meta}'
 # 6. Override demandé par le caissier
 #    PIN du responsable → 200 ; PIN du caissier → 403 OVERRIDE_REQUIRED
 curl -s -X POST $API/auth/override -H "Authorization: Bearer $CT" -H 'X-Device-Id: poste-1' \
-  -H 'Content-Type: application/json' -d '{"pin":"222222","action":"order.remove_item"}' | jq
+  -H 'Content-Type: application/json' -d '{"pin":"222222","action":"order.cancel"}' | jq
 curl -s -X POST $API/auth/override -H "Authorization: Bearer $CT" -H 'X-Device-Id: poste-1' \
-  -H 'Content-Type: application/json' -d '{"pin":"111111","action":"order.remove_item"}' \
+  -H 'Content-Type: application/json' -d '{"pin":"111111","action":"order.cancel"}' \
   | jq '{status, code}'
 
 # 7. Catalogue et salle (avec le jeton du caissier)
@@ -619,12 +1066,73 @@ curl -s "$API/products?search=jus" -H "Authorization: Bearer $CT" \
   | jq '.items[] | {name, price_xof, stock_quantity}'
 curl -s $API/tables/board -H "Authorization: Bearer $CT" | jq '{business_date, summary, n: (.tables | length)}'
 
-# 8. Désactiver le caissier : son jeton est aussitôt refusé (401)
+# 8. Session de caisse (avec le jeton du caissier)
+#    Pas de GET /cash-registers pour l'instant : récupérer l'id via psql (bootstrap crée « Caisse 1 »)
+REGISTER_ID=$(docker exec infra-db psql -U "$POSTGRES_USER" -d caisse -tAc \
+  "select id from cash_registers limit 1")
+KEY=$(cat /proc/sys/kernel/random/uuid)
+curl -s -X POST $API/cash-sessions -H "Authorization: Bearer $CT" -H "Idempotency-Key: $KEY" \
+  -H 'Content-Type: application/json' -d "{\"cash_register_id\":\"$REGISTER_ID\",\"opening_float_xof\":20000}" \
+  | tee /tmp/session.json | jq
+SESSION_ID=$(jq -r .id /tmp/session.json)
+curl -s $API/tables/board -H "Authorization: Bearer $CT" | jq '.business_date'   # non nul désormais
+
+# rejeu de la même clé → 200 + Idempotent-Replay: true, corps identique
+curl -si -X POST $API/cash-sessions -H "Authorization: Bearer $CT" -H "Idempotency-Key: $KEY" \
+  -H 'Content-Type: application/json' -d "{\"cash_register_id\":\"$REGISTER_ID\",\"opening_float_xof\":20000}" \
+  | grep -i -E '^HTTP|Idempotent-Replay'
+
+# mouvement de tiroir puis rapport X
+curl -s -X POST $API/cash-sessions/$SESSION_ID/movements -H "Authorization: Bearer $CT" \
+  -H 'Content-Type: application/json' -d '{"type":"OUT","amount_xof":2000,"reason":"achat glace"}' | jq
+curl -s $API/cash-sessions/$SESSION_ID/x-report -H "Authorization: Bearer $CT" | jq '.expected_cash_xof'
+# → 18000 (20000 - 2000)
+
+# 9. Commandes (menu et tables de démo : caisse.cli seed --demo)
+TABLE_1=$(curl -s $API/tables -H "Authorization: Bearer $CT" | jq -r '.items[0].id')
+POISSON=$(curl -s "$API/products?search=poisson" -H "Authorization: Bearer $CT" | jq -r '.items[0].id')
+ATTIEKE=$(curl -s "$API/products?search=atti" -H "Authorization: Bearer $CT" | jq -r '.items[0].id')
+ORDER_ID=$(curl -s -X POST $API/orders -H "Authorization: Bearer $CT" -H 'Content-Type: application/json' \
+  -d "{\"table_id\":\"$TABLE_1\",\"guests_count\":4}" | jq -r .order.id)
+curl -s -X POST $API/orders/$ORDER_ID/items -H "Authorization: Bearer $CT" -H 'Content-Type: application/json' \
+  -d "{\"product_id\":\"$POISSON\",\"quantity\":2,\"note\":\"bien cuit\"}" | jq '.order | {total_ttc_xof, total_ht_xof, total_vat_xof}'
+ITEM_ID=$(curl -s -X POST $API/orders/$ORDER_ID/items -H "Authorization: Bearer $CT" -H 'Content-Type: application/json' \
+  -d "{\"product_id\":\"$ATTIEKE\"}" | jq -r '.order.items[-1].id')
+# table occupée : 2e commande refusée, plan de salle à jour
+curl -s -X POST $API/orders -H "Authorization: Bearer $CT" -H 'Content-Type: application/json' \
+  -d "{\"table_id\":\"$TABLE_1\"}" | jq '{status, code, meta}'
+curl -s $API/tables/board -H "Authorization: Bearer $CT" | jq '.tables[0] | {label, status, order}'
+
+# retrait d'une ligne par le caissier, motif obligatoire (sans motif → 422)
+curl -s -X DELETE "$API/orders/$ORDER_ID/items/$ITEM_ID" -H "Authorization: Bearer $CT" | jq '{status, code}'
+curl -s -X DELETE "$API/orders/$ORDER_ID/items/$ITEM_ID?reason=erreur%20de%20saisie" \
+  -H "Authorization: Bearer $CT" | jq '.order | {total_ttc_xof, n: (.items | length)}'
+
+# vente à emporter : Comptoir n° 1
+curl -s -X POST $API/orders -H "Authorization: Bearer $CT" -H 'Content-Type: application/json' \
+  -d '{"table_id":null}' | jq '.order | {order_number, counter_number}'
+
+# pas encore d'encaissement : annuler les commandes ouvertes (responsable) pour pouvoir clôturer
+RT=$(curl -s -X POST $API/auth/login -H 'Content-Type: application/json' \
+  -d '{"pin":"222222","device_id":"poste-1"}' | jq -r .access_token)
+for ID in $(curl -s "$API/orders?status=OPEN" -H "Authorization: Bearer $CT" | jq -r '.items[].id'); do
+  curl -s -X POST $API/orders/$ID/cancel -H "Authorization: Bearer $RT" -H 'Content-Type: application/json' \
+    -d '{"reason":"test"}' | jq -c '.order | {order_number, status}'
+done
+curl -s $API/cash-sessions/$SESSION_ID/x-report -H "Authorization: Bearer $CT" | jq '.totals.controls'
+# → cancelled_orders: 2, removed_items: 1
+
+# clôture : Z n°1, écart nul si le comptage correspond
+curl -s -X POST $API/cash-sessions/$SESSION_ID/close -H "Authorization: Bearer $CT" \
+  -H "Idempotency-Key: $(cat /proc/sys/kernel/random/uuid)" -H 'Content-Type: application/json' \
+  -d '{"counted_breakdown":{"10000":1,"5000":1,"1000":3},"notes":"RAS"}' | jq
+
+# 10. Désactiver le caissier : son jeton est aussitôt refusé (401)
 curl -s -X PATCH $API/users/$CAISSIER_ID -H "$AUTH" -H 'Content-Type: application/json' \
   -d '{"is_active":false}' | jq '{full_name, is_active}'
 curl -s $API/auth/me -H "Authorization: Bearer $CT" | jq '{status, code}'
 
-# 9. Blocage progressif sur un poste dédié : 4 × 401 puis 423
+# 11. Blocage progressif sur un poste dédié : 4 × 401 puis 423
 for i in 1 2 3 4 5; do
   curl -s -X POST $API/auth/login -H 'Content-Type: application/json' \
     -d '{"pin":"999999","device_id":"poste-test"}' | jq -c '{status, code, meta}'
@@ -638,17 +1146,16 @@ docker exec infra-db sh -c 'psql -U "$POSTGRES_USER" -d caisse -c \
   "select created_at, action, entity from audit_logs order by created_at desc limit 20"'
 ```
 
-> Le scénario laisse deux utilisateurs de test en base, dont un désactivé. Comme les PIN doivent être uniques, relancer le scénario tel quel renverra `409` à l'étape 4 pour « Resp Test ». Changer les PIN ou désactiver ces comptes avant de le relancer.
+> Le scénario laisse deux utilisateurs de test en base, dont un désactivé, plus une session de caisse clôturée et deux commandes annulées. Comme les PIN doivent être uniques et qu'il ne peut y avoir qu'une session ouverte à la fois, relancer le scénario tel quel renverra `409` à l'étape 4 pour « Resp Test » (la session, elle, sera déjà clôturée et ne bloque rien). Changer les PIN avant de le relancer.
 
 ---
 
-## 7. Pas encore testable
+## 9. Pas encore testable
 
 | Lot | Routes du contrat absentes |
 |---|---|
-| L1 | `/cash-sessions` et toutes ses sous-routes (ouverture, clôture, X/Z, mouvements) |
-| L2 | `POST/PATCH/DELETE /categories`, `POST/PATCH /products`, `PATCH /products/{id}/price`, `POST /products/custom`, `POST/PATCH /tables` |
-| L3 | `/orders` et ses lignes, annulation, ré-impression |
+| L2 | `POST/PATCH/DELETE /categories`, `POST/PATCH /products`, `PATCH /products/{id}/price`, `POST/PATCH /tables` |
+| L3 | `POST /orders/{id}/reprint` (arrivera avec la file d'impression) |
 | L4 | `/orders/{id}/payments`, `/refunds`, `/payment-methods`, `/printing/*` |
 | L5 | `/stock/*` |
 | L6 | `/customers`, `/orders/{id}/fne`, `/fne/*` |

@@ -1,6 +1,7 @@
 import uuid
+from decimal import Decimal
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from caisse.domain.enums import CategoryKind
 from caisse.schemas.common import Schema
@@ -35,3 +36,18 @@ class ProductOut(Schema):
     is_custom: bool = Field(description="Produit créé à la volée pendant une commande")
     color: str | None = Field(description="Couleur du bouton, en hexadécimal")
     sort_order: int = Field(description="Ordre d'affichage dans sa catégorie")
+
+
+class CustomProductCreate(Schema):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [{"name": "Poisson capitaine 1 kg", "price_xof": 9000, "category_id": "…"}]
+        }
+    )
+
+    name: str = Field(min_length=1, max_length=120, description="Libellé de l'article libre")
+    price_xof: int = Field(ge=0, description="Prix TTC, en francs CFA entiers")
+    category_id: uuid.UUID = Field(description="Catégorie (sert au récapitulatif fiscal)")
+    vat_rate: Decimal = Field(
+        default=Decimal("18.00"), ge=0, le=99, decimal_places=2, description="Taux de TVA, en %"
+    )

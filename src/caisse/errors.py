@@ -52,6 +52,10 @@ InsufficientPrivilegeError = _error("InsufficientPrivilegeError", 403, "Rôle in
 OverrideRequiredError = _error("OverrideRequiredError", 403, "Autorisation responsable requise")
 NoOpenSessionError = _error("NoOpenSessionError", 409, "Aucune session de caisse ouverte")
 SessionAlreadyOpenError = _error("SessionAlreadyOpenError", 409, "Une session est déjà ouverte")
+SessionAlreadyClosedError = _error("SessionAlreadyClosedError", 409, "Session déjà clôturée")
+SessionNotClosedError = _error(
+    "SessionNotClosedError", 409, "Rapport Z indisponible avant la clôture"
+)
 SessionHasOpenOrdersError = _error("SessionHasOpenOrdersError", 409, "Commandes non soldées")
 BusinessDateMismatchError = _error(
     "BusinessDateMismatchError", 409, "Journée comptable à confirmer"

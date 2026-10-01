@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from caisse.config import get_settings
 from caisse.database import get_engine, get_sessionmaker
 from caisse.domain.enums import UserRole
-from caisse.models import Base, User
+from caisse.models import Base, CashRegister, User
 from caisse.services import user_service
 from caisse.services.audit_service import RequestContext
 
@@ -87,6 +87,17 @@ def make_user(db: Session):  # type: ignore[no-untyped-def]
         return user_service.create_user(
             db, full_name=name or f"User {pin}", role=role, pin=pin, actor_id=None, ctx=CTX
         )
+
+    return _make
+
+
+@pytest.fixture
+def make_cash_register(db: Session):  # type: ignore[no-untyped-def]
+    def _make(name: str = "Caisse 1") -> CashRegister:
+        register = CashRegister(name=name, printer_config={})
+        db.add(register)
+        db.commit()
+        return register
 
     return _make
 

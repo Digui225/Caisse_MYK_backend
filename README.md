@@ -63,7 +63,7 @@ print-agent/       service systemd hors Docker (imprimante USB + tiroir)
 | Lot | Fait | Reste |
 |---|---|---|
 | L0 | Squelette, schéma + migration, problem+json, `domain/money`, OpenAPI | Endpoints mockés du reste du contrat, CI |
-| L1 | PIN Argon2, JWT + refresh (rotation), RBAC, override 60 s usage unique, blocage progressif par poste, users, audit | Ouverture / clôture de session |
+| L1 | PIN Argon2, JWT + refresh (rotation), RBAC, override 60 s usage unique, blocage progressif par poste, users, audit, sessions de caisse (ouverture/clôture, X/Z, mouvements, idempotence générique) | — |
 | L2 | Lecture catégories / produits / tables, seeds, import CSV | CRUD catalogue, historique de prix |
-| L3 | `GET /tables/board` (requête agrégée) | Commandes et lignes |
+| L3 | `GET /tables/board` (requête agrégée), commandes (table / à emporter), lignes (ajout, modification, retrait avec motif), annulation sous override, article libre | Ré-impression (avec la file d'impression) |
 | L4+ | Agent d'impression (USB + tiroir, mode dummy) | Paiements, file d'impression, FNE, rapports, worker, backup |

@@ -31,6 +31,14 @@ def request_context(
 
 Ctx = Annotated[RequestContext, Depends(request_context)]
 
+OverrideTokenHeader = Annotated[
+    str | None,
+    Header(
+        alias="X-Override-Token",
+        description="Jeton obtenu par POST /auth/override (60 s, usage unique)",
+    ),
+]
+
 
 def current_user(
     db: DbSession,
