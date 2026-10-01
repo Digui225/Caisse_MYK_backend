@@ -20,9 +20,10 @@ from caisse.domain.ports import (
 
 log = structlog.get_logger()
 
-# Statuts où la requête n'a pas été traitée par la FNE. 504 n'en fait pas partie : la passerelle
-# a abandonné, mais la FNE a pu certifier derrière.
-_NOT_PROCESSED_STATUSES = {500, 502, 503}
+# Statuts où la requête n'a pas été traitée par la FNE. 500 n'en fait pas partie : constaté le
+# 01/10/2026, un 500 `invoice_signing_error` (stock de stickers vide) laisse une facture créée,
+# non signée, dans l'espace FNE. 504 non plus : la passerelle a abandonné, la FNE a pu certifier.
+_NOT_PROCESSED_STATUSES = {502, 503}
 
 
 def _json_default(value: object) -> object:

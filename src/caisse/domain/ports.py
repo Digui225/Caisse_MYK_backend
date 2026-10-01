@@ -69,11 +69,11 @@ class FneAuthError(FneError):
 
 
 class FneUnavailableError(FneError):
-    """La requête n'a pas été traitée (connexion impossible, 500/502/503) : renvoi sans danger."""
+    """La requête n'a pas été traitée (connexion impossible, 502/503) : renvoi sans danger."""
 
 
 class FneUncertainError(FneError):
-    """La requête a pu être traitée (délai dépassé après envoi, 504, réponse illisible) :
+    """La requête a pu être traitée (délai dépassé après envoi, 500, 504, réponse illisible) :
     **jamais** de renvoi automatique, l'API n'étant pas idempotente (PLAN-FNE D5)."""
 
 

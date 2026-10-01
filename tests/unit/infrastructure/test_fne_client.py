@@ -122,7 +122,13 @@ def test_validation_error_keeps_field_details() -> None:
         (400, {"message": "Point of sale is not valid", "error": "bad_request"}, FneRejectedError),
         (401, {"message": "Invalid API Key", "error": "unauthorized"}, FneAuthError),
         (404, {"message": "Not found"}, FneRejectedError),
-        (500, {"message": "Internal Server Error"}, FneUnavailableError),
+        # 500 de signature : facture créée non signée côté FNE (constaté le 01/10/2026)
+        (
+            500,
+            {"message": "Error signing invoice", "error": "invoice_signing_error"},
+            FneUncertainError,
+        ),
+        (502, "bad gateway", FneUnavailableError),
         (503, "maintenance", FneUnavailableError),
         (504, "gateway timeout", FneUncertainError),
         (200, {"message": "ok"}, FneUncertainError),  # 200 sans référence : on ne sait pas

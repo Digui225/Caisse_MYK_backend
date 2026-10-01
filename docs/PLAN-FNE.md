@@ -12,7 +12,7 @@ Document vivant : on coche, on corrige et on note les découvertes au fil de l'i
 | Vente | `POST {url}/external/invoices/sign` — `invoiceType: "sale"` |
 | Avoir | `POST {url}/external/invoices/{invoice.id}/refund` — `items: [{id, quantity}]` |
 | Réponse | `reference` (n° FNE), `token` (URL de vérification → QR), `balance_sticker`, `warning`, `invoice` (avec `id` et `items[].id`) |
-| Erreurs | 400 requête invalide (détail par champ dans `errors`), 401 clé invalide, 500 indisponible |
+| Erreurs | 400 requête invalide (détail par champ dans `errors`), 401 clé invalide, 500 erreur serveur (**peut laisser une facture créée**) |
 | Établissement | `RESTAURANT CHEZ SYLLA PLUS` |
 
 ## 1. Décisions de conception
@@ -23,7 +23,7 @@ Document vivant : on coche, on corrige et on note les découvertes au fil de l'i
 | D2 | **Prix HT** : `amount` = prix unitaire HT calculé depuis le TTC. On envoie un HT décimal (4 décimales) si l'API l'accepte, sinon arrondi entier ; l'écart TTC caisse ↔ TTC FNE est stocké et surveillé | à valider en sonde (phase 1) |
 | D3 | **Codes TVA** : 18 → `TVA`, 9 → `TVAB`, 0 → `TVAD` (paramètre `fne.vat_codes`). Un seul code par article (exigé par l'API) | **décidé** 01/10 |
 | D4 | **Moyen de paiement** : CASH→`cash`, CARD→`card`, MOBILE_MONEY→`mobile-money`, BANK_TRANSFER→`transfer`, CREDIT→`deferred`, OTHER à paramétrer. Paiement mixte : moyen du plus gros montant | proposé |
-| D5 | **Pas d'idempotence côté FNE** : un délai dépassé = résultat **incertain**, jamais renvoyé automatiquement. Seules les erreurs certaines (connexion refusée, 401, 500/502/503) repartent en file. Pour ne pas ajouter de valeur d'énumération (cassant en pratique, contrat §6), l'incertain reste en `SUBMITTING` avec un champ ajouté `is_uncertain: true` | proposé |
+| D5 | **Pas d'idempotence côté FNE** : un délai dépassé = résultat **incertain**, jamais renvoyé automatiquement. Seules les erreurs certaines (connexion refusée, 401, 502/503) repartent en file ; **un 500 est incertain** (constaté : facture créée non signée). Pour ne pas ajouter de valeur d'énumération (cassant en pratique, contrat §6), l'incertain reste en `SUBMITTING` avec un champ ajouté `is_uncertain: true` | proposé |
 | D6 | **Une seule FNE de vente active par commande** (index unique partiel), donc pas de double certification par double clic | proposé |
 | D7 | `DAILY_SUMMARY` n'a pas d'équivalent dans l'API. Avec D1, il couvre les tickets sans FNE (`/fne/daily-summary`, contrat §4.8) | proposé |
 | D8 | Client de passage (B2C) : nom / téléphone / e-mail par défaut paramétrables (`fne.walk_in_client`) — l'API les exige même en B2C | à valider en sonde |
@@ -33,9 +33,9 @@ Document vivant : on coche, on corrige et on note les découvertes au fil de l'i
 ```
 PENDING ──(soumission)──► SUBMITTING ──200──► CERTIFIED
                              │
-                             ├─ connexion refusée / 500 / 401 ─► QUEUED ──(worker, backoff)──► SUBMITTING
+                             ├─ connexion refusée / 502 / 503 / 401 ─► QUEUED ──(worker, backoff)──► SUBMITTING
                              ├─ 400 (données invalides) ─────► FAILED   (correction puis nouvel essai manuel)
-                             └─ délai dépassé ───────────────► SUBMITTING + is_uncertain (vérification dans
+                             └─ délai dépassé / 500 / 504 ────► SUBMITTING + is_uncertain (vérification dans
                                                                          l'espace FNE : « certifiée » avec n° saisi,
                                                                          ou « non certifiée » → renvoi)
 MANUAL : document traité hors API.
@@ -62,7 +62,7 @@ MANUAL : document traité hors API.
 
 ### Phase 3 — Client HTTP (`infrastructure/fne/`)
 - [x] Port `FneProvider` : `sign(payload)` et `refund(invoice_id, payload)` ; `FneResult` (`invoice_id`, `items`, montants, `balance_sticker`, `warning`)
-- [x] `HttpFneProvider` (httpx) avec classification des erreurs : `FneRejectedError` (4xx), `FneAuthError` (401), `FneUnavailableError` (connexion impossible, 500/502/503), `FneUncertainError` (délai dépassé après envoi, 504, réponse illisible)
+- [x] `HttpFneProvider` (httpx) avec classification des erreurs : `FneRejectedError` (4xx), `FneAuthError` (401), `FneUnavailableError` (connexion impossible, 502/503), `FneUncertainError` (délai dépassé après envoi, 500, 504, réponse illisible)
 - [x] `MockFneProvider` (dév. et tests) et sélection selon `FNE_PROVIDER`
 - [x] Tests du client avec `httpx.MockTransport` (`tests/unit/infrastructure/test_fne_client.py`) ; à compléter avec les traces réelles de la sonde
 
@@ -111,3 +111,4 @@ MANUAL : document traité hors API.
 | 01/10/2026 | `items` : « exactly one tax » parmi `TVA`, `TVAB`, `TVAC`, `TVAD`, **`TVAE`** (absent de la procédure) | Un code par article ; demander à la DGI ce que couvre `TVAE` |
 | 01/10/2026 | `pointOfSale` inconnu → 400 `"Point of sale is invalid"`. Il faut créer un point de vente dans l'espace FNE (outil « Application FNE », l'autre choix étant « TPE ») ; `CAISSE-1` créé | `fne.point_of_sale = "CAISSE-1"` |
 | 01/10/2026 | Avec `CAISSE-1` : validation passée puis 500 `invoice_signing_error`, identique avec un HT à 4 décimales ou entier | Cause côté compte FNE (stickers, établissement incomplet ou point de vente non actif) ; un 500 de signature doit être vérifié dans l'espace FNE avant d'être considéré « sans danger » |
+| 01/10/2026 | Les deux 500 ont laissé **deux factures « Vente » sans numéro** dans « Reçus et factures émis » ; solde de stickers à 0 FCFA | 500 reclassé incertain ; demander des stickers de test à la DGI. Montants FNE : 6 932 HT + 1 068 TVA = 8 000 TTC, identiques à la caisse avec un HT à 4 décimales comme entier (D2 rassurante) |
