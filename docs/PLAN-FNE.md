@@ -1,0 +1,111 @@
+# Plan d'implémentation — FNE (Facture Normalisée Électronique, DGI Côte d'Ivoire)
+
+Référence : *Procédure d'interfaçage des entreprises par API*, DGI, mai 2025.
+Document vivant : on coche, on corrige et on note les découvertes au fil de l'intégration.
+
+## 0. Rappel de l'API
+
+| | |
+|---|---|
+| URL test | `http://54.247.95.108/ws` (URL de prod transmise par la DGI après validation) |
+| Auth | `Authorization: Bearer <API KEY>` (onglet « Paramétrage » de l'espace FNE) |
+| Vente | `POST {url}/external/invoices/sign` — `invoiceType: "sale"` |
+| Avoir | `POST {url}/external/invoices/{invoice.id}/refund` — `items: [{id, quantity}]` |
+| Réponse | `reference` (n° FNE), `token` (URL de vérification → QR), `balance_sticker`, `warning`, `invoice` (avec `id` et `items[].id`) |
+| Erreurs | 400 requête invalide (détail par champ dans `errors`), 401 clé invalide, 500 indisponible |
+| Établissement | `RESTAURANT CHEZ SYLLA PLUS` |
+
+## 1. Décisions de conception
+
+| # | Décision | Statut |
+|---|---|---|
+| D1 | **Quand émettre** : **à la demande** via `POST /orders/{id}/fne`, sur une commande soldée. Pas de certification automatique à l'encaissement : `fiscal_document` vaut `null` dans la réponse de paiement (écart avec l'exemple v1.1 du contrat §4.6, à signaler au front) | **décidé** 01/10 |
+| D2 | **Prix HT** : `amount` = prix unitaire HT calculé depuis le TTC. On envoie un HT décimal (4 décimales) si l'API l'accepte, sinon arrondi entier ; l'écart TTC caisse ↔ TTC FNE est stocké et surveillé | à valider en sonde (phase 1) |
+| D3 | **Codes TVA** : 18 → `TVA`, 9 → `TVAB`, 0 → `TVAD` (paramètre `fne.vat_codes`). Un seul code par article (exigé par l'API) | **décidé** 01/10 |
+| D4 | **Moyen de paiement** : CASH→`cash`, CARD→`card`, MOBILE_MONEY→`mobile-money`, BANK_TRANSFER→`transfer`, CREDIT→`deferred`, OTHER à paramétrer. Paiement mixte : moyen du plus gros montant | proposé |
+| D5 | **Pas d'idempotence côté FNE** : un délai dépassé = résultat **incertain**, jamais renvoyé automatiquement. Seules les erreurs certaines (connexion refusée, 401, 500/502/503) repartent en file. Pour ne pas ajouter de valeur d'énumération (cassant en pratique, contrat §6), l'incertain reste en `SUBMITTING` avec un champ ajouté `is_uncertain: true` | proposé |
+| D6 | **Une seule FNE de vente active par commande** (index unique partiel), donc pas de double certification par double clic | proposé |
+| D7 | `DAILY_SUMMARY` n'a pas d'équivalent dans l'API. Avec D1, il couvre les tickets sans FNE (`/fne/daily-summary`, contrat §4.8) | proposé |
+| D8 | Client de passage (B2C) : nom / téléphone / e-mail par défaut paramétrables (`fne.walk_in_client`) — l'API les exige même en B2C | à valider en sonde |
+
+## 2. Cycle de vie d'un document FNE
+
+```
+PENDING ──(soumission)──► SUBMITTING ──200──► CERTIFIED
+                             │
+                             ├─ connexion refusée / 500 / 401 ─► QUEUED ──(worker, backoff)──► SUBMITTING
+                             ├─ 400 (données invalides) ─────► FAILED   (correction puis nouvel essai manuel)
+                             └─ délai dépassé ───────────────► SUBMITTING + is_uncertain (vérification dans
+                                                                         l'espace FNE : « certifiée » avec n° saisi,
+                                                                         ou « non certifiée » → renvoi)
+MANUAL : document traité hors API.
+```
+
+## 3. Phases
+
+### Phase 1 — Sonde sur l'environnement de test
+- [x] Clé API de test vérifiée (01/10) : acceptée, la plateforme répond depuis le poste local
+- [x] Commande `python -m caisse.cli fne-probe` : facture B2C (TVA 18 % + TVAD) puis avoir d'une unité (`--refund`) ; requêtes et réponses écrites dans `fne-probe/<horodatage>/` (hors git)
+- [ ] Lancer la sonde et ramener les traces dans `tests/fixtures/fne/`
+- [ ] Questions à trancher : HT décimal accepté (D2) ? valeurs client acceptées en B2C (D8) ? arrondi du TTC FNE ? format de `token` ?
+- Lancement (`.env` avec `FNE_API_BASE_URL=http://54.247.95.108/ws` et `FNE_API_KEY`, puis `docker compose up -d` pour recharger) :
+  ```bash
+  docker compose exec api python -m caisse.cli fne-probe \
+    --point-of-sale "<point de vente FNE>" \
+    --client-phone 07XXXXXXXX --client-email contact@exemple.ci --refund --yes
+  # établissement par défaut : RESTAURANT CHEZ SYLLA PLUS ; variante : --ht-decimals 0
+  ```
+
+### Phase 2 — Domaine pur (sans I/O)
+- [x] `domain/fne.py` : construction de la requête depuis une commande figée (lignes, TVA, moyen de paiement, template B2C/B2B/B2G/B2F, client), calcul HT, avoir
+- [x] Tests unitaires (`tests/unit/domain/test_fne.py`)
+
+### Phase 3 — Client HTTP (`infrastructure/fne/`)
+- [x] Port `FneProvider` : `sign(payload)` et `refund(invoice_id, payload)` ; `FneResult` (`invoice_id`, `items`, montants, `balance_sticker`, `warning`)
+- [x] `HttpFneProvider` (httpx) avec classification des erreurs : `FneRejectedError` (4xx), `FneAuthError` (401), `FneUnavailableError` (connexion impossible, 500/502/503), `FneUncertainError` (délai dépassé après envoi, 504, réponse illisible)
+- [x] `MockFneProvider` (dév. et tests) et sélection selon `FNE_PROVIDER`
+- [x] Tests du client avec `httpx.MockTransport` (`tests/unit/infrastructure/test_fne_client.py`) ; à compléter avec les traces réelles de la sonde
+
+### Phase 4 — Schéma (migration Alembic réversible)
+- [ ] `fne_documents` : `fne_invoice_id`, `parent_document_id` (avoir → vente), `items_map` (JSONB : ligne caisse → id article FNE), `fne_amount_ttc`, `sticker_balance`, `is_uncertain`
+- [ ] Enum `FneDocumentType.REFUND` (prévenir le front, contrat §6)
+- [ ] Index unique partiel : une vente FNE non échouée par commande (D6)
+- [ ] Paramètres métier : `fne.point_of_sale`, `fne.establishment`, `fne.vat_codes`, `fne.payment_methods`, `fne.walk_in_client`, `fne.sticker_alert_threshold`
+
+### Phase 5 — Service (`services/fne_service.py`)
+- [ ] `create_for_order` : copie figée de la commande soldée, idempotent par commande
+- [ ] `submit` : verrou de ligne, passage en `SUBMITTING` commité **avant** l'appel, appel synchrone (`fne_sync_timeout_seconds`), transitions de la §2, audit
+- [ ] `refund` : avoir total ou partiel à partir de `items_map`
+- [ ] `retry`, `resolve_uncertain` (certifiée avec n° saisi, ou non certifiée → renvoi), `mark_manual`
+- [ ] Alerte stock de stickers (`warning` ou solde sous le seuil) → journal + `/health`
+
+### Phase 6 — API (contrat §4.8, + ajouts non cassants)
+- [ ] `GET /customers?search=&ncc=` · `POST /customers`
+- [ ] `POST /orders/{id}/fne` : template (B2C par défaut, B2B/B2G avec `customer_id`), commande soldée obligatoire, soumission synchrone 4 s puis file
+- [ ] `GET /fne/documents?status=&business_date=` · `POST /fne/documents/{id}/retry` (R)
+- [ ] `GET /fne/documents/{id}/duplicate` (C) · `GET /fne/pending-count` (C)
+- [ ] `GET /fne/daily-summary?business_date=` · `GET /fne/daily-summary/{id}/export` (R)
+- [ ] Ajouts (endpoints nouveaux = non cassants) : `POST /fne/documents/{id}/resolve` (R, cas incertain) · `POST /fne/documents/{id}/refund` (R, avoir)
+- [ ] Erreurs : refus DGI → `FNE_REJECTED` ; nouveaux codes `FNE_NCC_REQUIRED`, `FNE_VAT_RATE_UNMAPPED`… à ajouter au catalogue §2 avec le front
+- [ ] Tests d'intégration avec `MockFneProvider`
+
+### Phase 7 — Worker de renvoi
+- [ ] `python -m caisse.cli fne-worker` (service dans `docker-compose.yml`) : traite les `QUEUED` échus avec un backoff exponentiel plafonné, ne touche jamais aux documents incertains (`is_uncertain`)
+
+### Phase 8 — Branchements (dépendent de L4)
+- [ ] Remboursement → avoir FNE
+- [ ] Ticket : n° FNE + QR (`token`) via la file d'impression ; en attendant, l'URL du QR est renvoyée par l'API
+
+### Phase 9 — Validation DGI et production
+- [ ] Jeu de spécimens : B2C espèces, B2C mobile money, B2B avec NCC, multi-taux, avoir partiel
+- [ ] Envoi à support.fne@dgi.gouv.ci (factures FNE + factures correspondantes de la caisse)
+- [ ] Après validation : URL et clé de prod, surveillance des journaux
+
+## 4. Journal des découvertes
+
+| Date | Constat | Conséquence |
+|---|---|---|
+| 01/10/2026 | Contrat d'API : routes FNE au §4.8, statuts au §4.6 (`PENDING`, `SUBMITTING`, `CERTIFIED`, `QUEUED`, `FAILED`, `MANUAL`) | D5 sans nouvelle valeur d'énumération ; phase 6 alignée |
+| 01/10/2026 | Clé de test valide : corps vide → 400 avec détail par champ ; clé bidon → 401 `"error": "unauthorized"` (la procédure indiquait `unauthorized_exception`) | Ne pas se fier au libellé `error`, seulement au statut HTTP |
+| 01/10/2026 | Champs exigés : `invoiceType`, `paymentMethod`, `template`, `clientCompanyName`, `clientPhone` (**chaîne**, la procédure dit `int`), `clientEmail`, `pointOfSale`, `establishment`, `items` ; `isRne` non exigé | `clientPhone` envoyé en chaîne |
+| 01/10/2026 | `items` : « exactly one tax » parmi `TVA`, `TVAB`, `TVAC`, `TVAD`, **`TVAE`** (absent de la procédure) | Un code par article ; demander à la DGI ce que couvre `TVAE` |

@@ -6,13 +6,16 @@ python -m caisse.cli reset-pin --name "Awa"
 python -m caisse.cli seed --demo
 python -m caisse.cli create-tables --count 15 --zone Salle
 python -m caisse.cli import-catalog /data/menu.csv
+python -m caisse.cli fne-probe --point-of-sale "..." --client-phone ... --client-email ... --yes
 """
 
 import argparse
 import csv
 import getpass
+import json
 import os
 import sys
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -153,6 +156,88 @@ def cmd_import_catalog(db: Session, args: argparse.Namespace) -> None:
     print(f"{created} produit(s) importé(s).")
 
 
+PROBE_LINES = [
+    # TTC attendu : 2 x 3 500 + 1 x 1 000 = 8 000 XOF
+    ("Poisson braisé", 2, 3500, Decimal("18"), "PROBE-01"),
+    ("Eau minérale 1,5 L", 1, 1000, Decimal("0"), "PROBE-02"),
+]
+
+
+def cmd_fne_probe(args: argparse.Namespace) -> None:
+    """Sonde de l'environnement FNE de test (PLAN-FNE phase 1) : une facture B2C, puis
+    éventuellement un avoir d'une unité sur le premier article. Requêtes et réponses sont
+    écrites dans `--out` (sans la clé API)."""
+    from caisse.config import get_settings
+    from caisse.domain import fne
+    from caisse.domain.ports import FneError
+    from caisse.infrastructure.fne import HttpFneProvider
+
+    settings = get_settings()
+    if not settings.fne_api_base_url or not settings.fne_api_key:
+        sys.exit("FNE_API_BASE_URL et FNE_API_KEY doivent être définis (fichier .env).")
+    print(f"URL FNE : {settings.fne_api_base_url}")
+    if not args.yes:
+        sys.exit("Chaque appel consomme un sticker : relancez avec --yes pour confirmer.")
+
+    out = Path(args.out) / datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    out.mkdir(parents=True, exist_ok=True)
+
+    def save(name: str, data: object) -> None:
+        (out / f"{name}.json").write_text(
+            json.dumps(data, default=str, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+    provider = HttpFneProvider(settings.fne_api_base_url, settings.fne_api_key)
+    lines = [
+        fne.FneLine(description=d, quantity=q, unit_price_ttc_xof=p, vat_rate=r, reference=ref)
+        for d, q, p, r, ref in PROBE_LINES
+    ]
+    expected_ttc = sum(line.quantity * line.unit_price_ttc_xof for line in lines)
+    try:
+        request = fne.build_sale_request(
+            lines=lines,
+            client=fne.FneClient(
+                company_name=args.client_name, phone=args.client_phone, email=args.client_email
+            ),
+            template=fne.FneTemplate.B2C,
+            payment_method="cash",
+            issuer=fne.FneIssuer(
+                point_of_sale=args.point_of_sale, establishment=args.establishment
+            ),
+            ht_decimals=args.ht_decimals,
+        )
+    except fne.FneMappingError as exc:
+        sys.exit(f"Requête invalide : {exc.detail}")
+    save("1-sign-request", request)
+    try:
+        sale = provider.sign(request, timeout=args.timeout)
+    except FneError as exc:
+        save("1-sign-error", {"type": type(exc).__name__, "status": exc.status, "body": exc.body})
+        sys.exit(f"Échec ({type(exc).__name__}) : {exc}\nDétails : {out}")
+    save("1-sign-response", sale.raw)
+    print(f"Facture certifiée : {sale.external_number}")
+    print(f"QR (token)        : {sale.qr_payload}")
+    print(f"TTC caisse / FNE  : {expected_ttc} / {sale.amount_ttc} (TVA FNE {sale.vat_amount})")
+    print(f"Stickers restants : {sale.balance_sticker} (alerte : {sale.sticker_warning})")
+
+    if args.refund:
+        if not sale.invoice_id or not sale.items:
+            sys.exit("Réponse sans invoice.id ou items[].id : avoir impossible.")
+        refund_request = fne.build_refund_request([(sale.items[0].id, 1)])
+        save("2-refund-request", {"invoice_id": sale.invoice_id, **refund_request})
+        try:
+            credit = provider.refund(sale.invoice_id, refund_request, timeout=args.timeout)
+        except FneError as exc:
+            save(
+                "2-refund-error",
+                {"type": type(exc).__name__, "status": exc.status, "body": exc.body},
+            )
+            sys.exit(f"Échec de l'avoir ({type(exc).__name__}) : {exc}\nDétails : {out}")
+        save("2-refund-response", credit.raw)
+        print(f"Avoir certifié    : {credit.external_number}")
+    print(f"Traces : {out}")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="caisse.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -172,8 +257,26 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--zone", default="Salle")
     p = sub.add_parser("import-catalog", help="Importer le menu depuis un CSV")
     p.add_argument("csv")
+    p = sub.add_parser("fne-probe", help="Sonde de l'API FNE de test (consomme des stickers)")
+    p.add_argument("--point-of-sale", required=True, help="tel que configuré dans l'espace FNE")
+    p.add_argument(
+        "--establishment",
+        default="RESTAURANT CHEZ SYLLA PLUS",
+        help="tel que configuré dans l'espace FNE",
+    )
+    p.add_argument("--client-name", default="CLIENT DIVERS")
+    p.add_argument("--client-phone", required=True)
+    p.add_argument("--client-email", required=True)
+    p.add_argument("--ht-decimals", type=int, default=4, help="précision du prix HT envoyé")
+    p.add_argument("--refund", action="store_true", help="enchaîner un avoir d'une unité")
+    p.add_argument("--timeout", type=float, default=15.0)
+    p.add_argument("--out", default="fne-probe", help="dossier des traces")
+    p.add_argument("--yes", action="store_true", help="confirme l'envoi réel")
 
     args = parser.parse_args(argv)
+    if args.command == "fne-probe":  # aucun accès base
+        cmd_fne_probe(args)
+        return
     handler = {
         "bootstrap": cmd_bootstrap,
         "create-user": cmd_create_user,
