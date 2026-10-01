@@ -1,6 +1,20 @@
 # Endpoints testables — état au 01/10/2026
 
-Ce document décrit les **39 routes réellement implémentées** dans `caisse-backend`, telles que le code les expose aujourd'hui. Le contrat cible complet est dans [`03-CONTRAT-API.md`](../../projet_caisse_MYK/03-CONTRAT-API.md). Toute route du contrat absente d'ici renvoie `404 NOT_FOUND`.
+Ce document décrit les **41 routes réellement implémentées** dans `caisse-backend`, telles que le code les expose aujourd'hui. Le contrat cible complet est dans [`03-CONTRAT-API.md`](../../projet_caisse_MYK/03-CONTRAT-API.md). Toute route du contrat absente d'ici renvoie `404 NOT_FOUND`.
+
+## Nouveautés du 01/10/2026 — à lire en premier (front)
+
+| Sujet | Ce qui change pour le front | Où |
+|---|---|---|
+| **TVA à 0 %** | Le restaurant est au **régime TEE** (confirmé) : tous les produits sont à `vat_rate: 0.0`, donc `total_ht_xof` = `total_ttc_xof` et `total_vat_xof` = 0 partout (commandes, X, Z). Prévoir de masquer la ligne « TVA » ou d'afficher la mention du régime (à valider avec le comptable). | [§0 Montants](#montants) |
+| **FNE à la demande** | La FNE n'est **plus émise à l'encaissement** : écart avec le contrat v1.1 §4.6, où la réponse de paiement porte un `fiscal_document`. Quand le lot Paiements arrivera, ce champ vaudra `null`. La FNE s'émet par un bouton dédié : `POST /orders/{id}/fne`. | [§8](#8-clients-entreprise-et-fne) |
+| **Clients entreprise** | `GET/POST /customers` : recherche par NCC, création avec contrôle du format (7 chiffres + 1 lettre). | [§8](#8-clients-entreprise-et-fne) |
+| **Nouvelle valeur d'énumération** | `FneDocument.type` : `FNE` **ou `REFUND`** (avoir). Contrat §6 : prévoir un cas par défaut. | [§8](#8-clients-entreprise-et-fne) |
+| **Nouveau champ** | `is_uncertain` sur un document FNE : issue inconnue, action du responsable requise. Le statut reste `SUBMITTING` (aucune valeur de statut ajoutée). | [§8](#8-clients-entreprise-et-fne) |
+| **Nouveaux codes d'erreur** | `CUSTOMER_NCC_EXISTS`, `FNE_ORDER_NOT_PAID`, `FNE_NOT_CONFIGURED`, `FNE_DOCUMENT_STATE`, `FNE_REFUND_EXCEEDS`, et les `422 FNE_*` de traduction. | [§0 Erreurs](#format-des-erreurs-applicationproblemjson) |
+| **Nouveaux avertissements** | Dans `warnings[]` (HTTP 200/201) : `FNE_REJECTED` (déjà au contrat), `FNE_UNCERTAIN`, `FNE_QUEUED`, `FNE_STICKER_LOW`. | [§8](#8-clients-entreprise-et-fne) |
+| **Routes ajoutées hors contrat** (non cassantes) | `GET /orders/{id}/fne`, `POST /fne/documents/{id}/resolve`, `POST /fne/documents/{id}/refund`. | [§8](#8-clients-entreprise-et-fne) |
+| **Impression de la FNE** | En **A4**, pas sur le ticket 80 mm : ouvrir `qr_payload` (page de vérification de la DGI) et l'imprimer depuis le navigateur. | [§8](#8-clients-entreprise-et-fne) |
 
 ## Sommaire
 
@@ -1074,9 +1088,93 @@ La **FNE** (facture normalisée électronique) est certifiée par la plateforme 
 
 Un document incertain n'est **jamais** renvoyé sans vérification : l'API FNE n'a aucune protection contre les doublons.
 
+### Parcours d'écran conseillé
+
+1. **Commande soldée** → bouton « Émettre la FNE » (le backend refuse avant : `409 FNE_ORDER_NOT_PAID`). Si `GET /orders/{id}/fne` renvoie déjà un document, afficher son état au lieu du bouton.
+2. Choix **Particulier** (`B2C`, rien d'autre à saisir) ou **Entreprise** (`B2B`). `B2G` (administration) et `B2F` (client étranger) existent aussi.
+3. **Entreprise** : saisie du NCC → `GET /customers?ncc=…` :
+   - trouvé → afficher la raison sociale pour **confirmation**, puis émettre avec son `customer_id` ;
+   - absent → formulaire (raison sociale, téléphone, e-mail) → `POST /customers` → émettre. Sur `409 CUSTOMER_NCC_EXISTS`, réutiliser `meta.customer_id`.
+4. `POST /orders/{id}/fne` (jusqu'à 4 s d'attente : afficher un indicateur). Lire `document.status` et `warnings` :
+
+   | Résultat | Affichage conseillé |
+   |---|---|
+   | `CERTIFIED` | n° FNE + bouton « Imprimer (A4) » qui ouvre `qr_payload` dans un nouvel onglet |
+   | `QUEUED` | « FNE en attente de transmission » ; un responsable pourra la renvoyer |
+   | `FAILED` (`FNE_REJECTED`) | « FNE refusée par la DGI », prévenir le responsable |
+   | `SUBMITTING` + `is_uncertain` (`FNE_UNCERTAIN`) | « Résultat inconnu : **ne pas réessayer**, un responsable doit vérifier dans l'espace FNE » |
+   | `MANUAL` | « À saisir dans l'application FNE » |
+   | warning `FNE_STICKER_LOW` | bandeau « stock de stickers bas » (`meta.balance_sticker`) |
+
+5. **Barre d'état** : `GET /fne/pending-count` au même rythme que les autres rafraîchissements ; un badge si `pending > 0`, mis en avant si `uncertain > 0`.
+6. **Écran responsable** : `GET /fne/documents?status=…` avec les actions `retry` (QUEUED, FAILED), `resolve` (incertains) et `refund` (avoir).
+
+Ne jamais rejouer automatiquement `POST /orders/{id}/fne` côté front : un rappel est sans danger (même document renvoyé), mais il ne relance pas une FNE incertaine.
+
+### Objet `document` (FNE)
+
+```json
+{
+  "id": "0192f3a1-…",
+  "type": "FNE",
+  "status": "CERTIFIED",
+  "is_uncertain": false,
+  "template": "B2B",
+  "order_id": "0192f39e-…",
+  "internal_reference": "2026-10-01-0042",
+  "customer_id": "0192f3a0-…",
+  "parent_document_id": null,
+  "external_number": "1304777N26000000023",
+  "qr_payload": "http://54.247.95.108/fr/verification/019465c1-3f61-766c-9652-706e32dfb436",
+  "fne_amount_ttc_xof": 24000,
+  "certified_at": "2026-10-01T15:00:36Z",
+  "attempts": 1,
+  "last_error": null,
+  "next_retry_at": null,
+  "created_at": "2026-10-01T15:00:35Z"
+}
+```
+
+| Champ | Sens |
+|---|---|
+| `type` | `FNE` (vente) ou `REFUND` (avoir, avec `parent_document_id`) |
+| `status` | `PENDING`, `SUBMITTING`, `CERTIFIED`, `QUEUED`, `FAILED`, `MANUAL` |
+| `is_uncertain` | `true` : issue inconnue, voir `resolve` |
+| `template` | `B2C`, `B2B`, `B2G`, `B2F` |
+| `internal_reference` | N° de la commande |
+| `external_number` | N° FNE de la DGI (`null` tant que non certifiée) |
+| `qr_payload` | Lien de vérification DGI : contenu du QR et page A4 imprimable |
+| `fne_amount_ttc_xof` | Total TTC calculé par la DGI (doit égaler celui de la commande) |
+| `last_error` | Diagnostic technique, **à ne pas afficher tel quel** |
+| `next_retry_at` | Renvoi prévu (`QUEUED`) |
+
+Exemple de réponse avec avertissement (FNE injoignable) :
+
+```json
+{
+  "document": { "id": "…", "type": "FNE", "status": "QUEUED", "is_uncertain": false,
+                "external_number": null, "qr_payload": null, "attempts": 1,
+                "next_retry_at": "2026-10-01T15:01:35Z", "…": "…" },
+  "warnings": [
+    { "code": "FNE_QUEUED", "detail": "FneUnavailableError: …",
+      "meta": { "next_retry_at": "2026-10-01T15:01:35Z" } }
+  ]
+}
+```
+
 ### `GET /customers?search=&ncc=` — rechercher un client entreprise
 
-Rôle : CAISSIER. `search` cherche dans la raison sociale et le NCC ; `ncc` filtre sur le début du NCC. 50 résultats au plus.
+Rôle : CAISSIER. `search` cherche dans la raison sociale et le NCC ; `ncc` filtre sur le début du NCC (espaces et minuscules acceptés). 50 résultats au plus, triés par raison sociale.
+
+```json
+{
+  "items": [
+    { "id": "0192f3a0-…", "company_name": "CGECI", "ncc": "9506466A", "tax_regime": null,
+      "address": null, "phone": "0709080765", "email": "contact@cgeci.ci" }
+  ],
+  "next_cursor": null
+}
+```
 
 ### `POST /customers` — créer un client entreprise
 
@@ -1170,11 +1268,24 @@ Rôle : CAISSIER. Le document certifié ; `qr_payload` ouvre la page A4 de la DG
 
 ### `GET /fne/pending-count` — compteur de la barre d'état
 
-Rôle : CAISSIER. `{ "pending": 2, "uncertain": 1, "failed": 0 }` : documents en attente d'une action, dont incertains et refusés.
+Rôle : CAISSIER. `{ "pending": 2, "uncertain": 1, "failed": 0 }` : documents en attente d'une action (`PENDING`, `QUEUED`, `SUBMITTING`, `FAILED`), dont incertains et refusés.
 
 ### `GET /fne/daily-summary?business_date=` — récapitulatif de la journée
 
 Rôle : RESPONSABLE. Commandes soldées, part couverte par une FNE certifiée, documents en attente, ventes par groupe fiscal. Journée par défaut : celle de la session ouverte.
+
+```json
+{
+  "business_date": "2026-10-01",
+  "paid_orders": 58, "gross_ttc_xof": 412000,
+  "certified_orders": 6, "certified_ttc_xof": 96000,
+  "pending_documents": 1,
+  "by_fiscal_group": [
+    { "group": "POISSONS", "quantity": 62, "amount_xof": 217000 },
+    { "group": "JUS", "quantity": 48, "amount_xof": 48000 }
+  ]
+}
+```
 
 Trace dans `audit_logs` : `customer.create`, `fne.issue`, `fne.submit` (à chaque appel à la DGI), `fne.retry`, `fne.resolve`, `fne.refund`.
 
