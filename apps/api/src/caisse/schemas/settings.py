@@ -22,6 +22,7 @@ class UpdateEstablishmentSettingsRequest(BaseModel):
     phone: str | None = Field(None, max_length=50)
     default_vat_rate: float | None = Field(None, ge=0, le=100)
     receipt_footer: str | None = Field(None, max_length=255)
+    print_width: int | None = Field(None, description="Largeur papier thermique en mm (58 ou 80) ou colonnes (32 ou 42)")
 
 
 class CashRegisterResponse(BaseSchema):

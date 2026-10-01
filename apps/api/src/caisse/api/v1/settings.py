@@ -70,6 +70,8 @@ async def update_establishment_settings(
         setting.default_vat_rate = payload.default_vat_rate
     if payload.receipt_footer is not None:
         setting.receipt_footer = payload.receipt_footer.strip()
+    if payload.print_width is not None:
+        setting.print_width = payload.print_width
 
     db.commit()
     db.refresh(setting)

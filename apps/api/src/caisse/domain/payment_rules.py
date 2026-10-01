@@ -306,15 +306,16 @@ def format_receipt_text(
 
     lines.append(sep_line)
 
-    # 6. Bloc fiscal DGI / FNE
-    fne_number = (fne_info or {}).get("fne_number") or order_info.get("fne_number") or "FNE-2026-10-01-MYK-0042"
-    fne_qr_url = (fne_info or {}).get("qr_url") or order_info.get("fne_qr_url") or f"https://dgi.gouv.ci/fne/verify/{fne_number}"
-
-    lines.append(center("FACTURE NORMALISEE DGI"))
-    lines.append(center(str(fne_number)))
-    lines.append(f"[QR_CODE: {fne_qr_url}]")
-
-    lines.append(sep_line)
+    # 6. Bloc fiscal DGI / FNE (uniquement si facture normalisée demandée ou présente)
+    fne_number = (fne_info or {}).get("fne_number") or order_info.get("fne_number")
+    fne_qr_url = (fne_info or {}).get("qr_url") or order_info.get("fne_qr_url")
+    if fne_number or fne_qr_url:
+        lines.append(center("FACTURE NORMALISEE DGI"))
+        if fne_number:
+            lines.append(center(str(fne_number)))
+        if fne_qr_url:
+            lines.append(f"[QR_CODE: {fne_qr_url}]")
+        lines.append(sep_line)
 
     # 7. Pied de ticket
     footer = restaurant_info.get("footer", "Merci de votre visite · A tres bientot !")

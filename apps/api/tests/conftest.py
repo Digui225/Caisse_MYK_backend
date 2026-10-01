@@ -25,6 +25,12 @@ test_engine = create_engine(
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 
 
+@pytest.fixture(autouse=True)
+def disable_hardware_printing_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    from caisse.services.printing_service import PrintingService
+    monkeypatch.setattr(PrintingService, "_send_raw_esc_pos", lambda *args, **kwargs: True)
+
+
 @pytest.fixture(scope="function")
 def db_session() -> Generator[Session, None, None]:
     Base.metadata.create_all(bind=test_engine)

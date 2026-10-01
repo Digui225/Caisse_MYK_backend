@@ -117,7 +117,8 @@ class PaymentService:
             idempotency_key=idempotency_key,
         )
         self.payment_repo.add(payment)
-        order.payments.append(payment)
+        if payment not in order.payments:
+            order.payments.append(payment)
 
         # 7. Mise à jour de la commande
         order.paid_xof += payload.amount_xof
@@ -142,16 +143,7 @@ class PaymentService:
             from caisse.services.stock_service import StockService
             StockService(self.db).record_sale_out_for_order(order, user_id)
 
-            # Génération du ticket de caisse définitif
-            job = self.printing_service.create_receipt_job(
-                order=order,
-                payments=order.payments,
-                cashier_name=cashier_name,
-                open_drawer=drawer_opened,
-                is_duplicate=False,
-            )
-            print_job_id = job.id
-
+            fne_info = None
             # Facturation normalisée (FNE) : uniquement si expressément demandée par le client
             if payload.request_fne:
                 from caisse.services.fne_service import FneService
@@ -160,7 +152,23 @@ class PaymentService:
                     order_id=order.id,
                     customer_id=payload.customer_id,
                 )
-                fne_status = str(fne_doc.status) if fne_doc and fne_doc.status else None
+                if fne_doc:
+                    fne_status = str(fne_doc.status) if fne_doc.status else None
+                    fne_info = {
+                        "fne_number": fne_doc.invoice_number,
+                        "qr_url": fne_doc.qr_url or (f"https://dgi.gouv.ci/fne/verify/{fne_doc.invoice_number}" if fne_doc.invoice_number else None),
+                    }
+
+            # Génération du ticket de caisse définitif
+            job = self.printing_service.create_receipt_job(
+                order=order,
+                payments=order.payments,
+                cashier_name=cashier_name,
+                open_drawer=drawer_opened,
+                is_duplicate=False,
+                fne_info=fne_info,
+            )
+            print_job_id = job.id
         else:
             order.status = OrderStatus.PARTIALLY_PAID
 

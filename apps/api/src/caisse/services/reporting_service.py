@@ -8,7 +8,12 @@ from caisse.models.fne import FneDocument
 from caisse.models.order import Order, OrderItem
 from caisse.models.payment import Payment
 from caisse.models.stock import StockItem
-from caisse.schemas.report import DashboardKpiResponse, PaymentMethodSplit, TopProductReport
+from caisse.schemas.report import (
+    DashboardKpiResponse,
+    HourlySalesItem,
+    PaymentMethodSplit,
+    TopProductReport,
+)
 
 
 class ReportingService:
@@ -37,10 +42,50 @@ class ReportingService:
         settled_orders_list = [o for o in daily_orders if o.status == "PAID" or o.due_xof == 0]
         settled_orders = len(settled_orders_list)
 
+        open_orders_list = [o for o in daily_orders if o.status in ("OPEN", "PARTIALLY_PAID")]
+        open_orders = len(open_orders_list)
+
+        active_tables_set = {o.table_id for o in open_orders_list if o.table_id is not None}
+        active_tables_count = len(active_tables_set)
+
+        from caisse.models.table import RestaurantTable
+        total_tables_count = (
+            self.db.query(func.count(RestaurantTable.id))
+            .filter(RestaurantTable.is_active == True)
+            .scalar()
+            or 14
+        )
+
+        open_dine_in_count = sum(1 for o in open_orders_list if o.table_id is not None)
+        open_takeaway_count = sum(1 for o in open_orders_list if o.table_id is None)
+
+        dine_in_orders_count = open_dine_in_count if open_orders > 0 else sum(1 for o in daily_orders if o.table_id is not None and o.status != "CANCELLED")
+        takeaway_orders_count = open_takeaway_count if open_orders > 0 else sum(1 for o in daily_orders if o.table_id is None and o.status != "CANCELLED")
+
         total_sales_ttc = sum(o.total_ttc_xof for o in settled_orders_list)
         total_sales_ht = sum(o.total_ht_xof for o in settled_orders_list)
         total_sales_vat = sum(o.total_vat_xof for o in settled_orders_list)
         avg_basket = (total_sales_ttc // settled_orders) if settled_orders > 0 else 0
+
+        # Ventes horaires réelles
+        hourly_map: dict[str, dict[str, int]] = {}
+        for o in settled_orders_list:
+            dt = o.paid_at or o.opened_at or o.created_at
+            if dt:
+                h_str = dt.strftime("%H") + "h"
+                if h_str not in hourly_map:
+                    hourly_map[h_str] = {"total_sales_xof": 0, "orders_count": 0}
+                hourly_map[h_str]["total_sales_xof"] += o.total_ttc_xof
+                hourly_map[h_str]["orders_count"] += 1
+
+        hourly_sales = [
+            HourlySalesItem(
+                hour=h,
+                total_sales_xof=data["total_sales_xof"],
+                orders_count=data["orders_count"],
+            )
+            for h, data in sorted(hourly_map.items())
+        ]
 
         # 2. Ventilation des paiements
         all_payments = self.db.query(Payment).all()
@@ -142,12 +187,18 @@ class ReportingService:
             business_date=business_date_str,
             total_orders=total_orders,
             settled_orders=settled_orders,
+            open_orders=open_orders,
+            active_tables_count=active_tables_count,
+            total_tables_count=total_tables_count,
+            dine_in_orders_count=dine_in_orders_count,
+            takeaway_orders_count=takeaway_orders_count,
             total_sales_ttc_xof=total_sales_ttc,
             total_sales_ht_xof=total_sales_ht,
             total_sales_vat_xof=total_sales_vat,
             average_basket_xof=avg_basket,
             payments_by_method=payments_by_method,
             top_products=top_products,
+            hourly_sales=hourly_sales,
             active_sessions_count=active_sessions_count,
             low_stock_items_count=low_stock_items_count,
             fne_certified_count=fne_certified_count,

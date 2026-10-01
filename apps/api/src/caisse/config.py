@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 
     # Intégrations
     PRINT_AGENT_URL: str = "http://host.docker.internal:8090"
+    ENABLE_HARDWARE_PRINTING: bool = False
     FNE_PROVIDER: Literal["manual", "api", "mock"] = "manual"
     BACKUP_DIR: str = "/var/backups/caisse"
 

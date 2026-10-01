@@ -33,6 +33,7 @@ class PrintingService:
         payments: list[Payment],
         cashier_name: str,
         is_duplicate: bool = False,
+        fne_info: dict | None = None,
     ) -> str:
         from caisse.models.settings import EstablishmentSetting
         setting = self.db.query(EstablishmentSetting).first()
@@ -78,8 +79,11 @@ class PrintingService:
                 total_tendered += p.tendered_xof
 
         width = 32
-        if setting and setting.print_width in [32, 42]:
-            width = setting.print_width
+        if setting:
+            if setting.print_width in (58, 32):
+                width = 32
+            elif setting.print_width in (80, 42, 48):
+                width = 42
 
         totals = {
             "total_ttc_xof": order.total_ttc_xof,
@@ -95,6 +99,7 @@ class PrintingService:
             items=items,
             payments=payment_entries,
             totals=totals,
+            fne_info=fne_info,
             is_duplicate=is_duplicate,
             width=width,
         )
@@ -106,12 +111,14 @@ class PrintingService:
         cashier_name: str,
         open_drawer: bool = False,
         is_duplicate: bool = False,
+        fne_info: dict | None = None,
     ) -> PrintJob:
         content = self.generate_receipt_content(
             order=order,
             payments=payments,
             cashier_name=cashier_name,
             is_duplicate=is_duplicate,
+            fne_info=fne_info,
         )
 
         job = PrintJob(
@@ -138,6 +145,15 @@ class PrintingService:
         user_id: str,
         device_id: str | None = None,
     ) -> PrintJob:
+        from caisse.models.fne import FneDocument
+        fne_doc = self.db.query(FneDocument).filter(FneDocument.order_id == order.id).first()
+        fne_info = None
+        if fne_doc and (fne_doc.invoice_number or fne_doc.qr_url):
+            fne_info = {
+                "fne_number": fne_doc.invoice_number,
+                "qr_url": fne_doc.qr_url,
+            }
+
         payments = order.payments or []
         job = self.create_receipt_job(
             order=order,
@@ -145,6 +161,7 @@ class PrintingService:
             cashier_name=cashier_name,
             open_drawer=False,  # Strict : jamais d'ouverture tiroir sur duplicata
             is_duplicate=True,
+            fne_info=fne_info,
         )
 
         self.audit.log(
@@ -158,8 +175,19 @@ class PrintingService:
         self.db.commit()
         return job
 
-    def _send_raw_esc_pos(self, raw_bytes: bytes) -> bool:
+    def _send_raw_esc_pos(self, raw_bytes: bytes, force: bool = False) -> bool:
         """Envoie des octets bruts ESC/POS directement à l'imprimante thermique."""
+        from caisse.config import get_settings
+        app_settings = get_settings()
+
+        # En mode test, ne JAMAIS envoyer d'octets au matériel
+        if app_settings.APP_ENV == "test":
+            return True
+
+        # Si l'impression matérielle est désactivée dans la config et non forcée manuellement
+        if not app_settings.ENABLE_HARDWARE_PRINTING and not force:
+            return True
+
         # 1. Sur Linux : priorité absolue à CUPS raw (Xprinter_58) ou port USB direct
         if shutil.which("lpr"):
             for printer_target in ["Xprinter_58", None]:
@@ -196,7 +224,7 @@ class PrintingService:
 
     def manual_open_drawer(self, user_id: str, device_id: str | None = None) -> bool:
         pulse_bytes = ESC_INIT + ESC_DRAWER_KICK
-        success = self._send_raw_esc_pos(pulse_bytes)
+        success = self._send_raw_esc_pos(pulse_bytes, force=True)
 
         self.audit.log(
             action="MANUAL_DRAWER_OPENED",
@@ -272,13 +300,17 @@ class PrintingService:
             items=items,
             payments=payments,
             totals=totals,
+            fne_info={
+                "fne_number": "FNE-2026-10-01-MYK-0042",
+                "qr_url": "https://dgi.gouv.ci/fne/verify/FNE-2026-10-01-MYK-0042",
+            },
             is_duplicate=False,
             width=width,
             welcome_message=welcome,
         )
 
         raw_bytes = build_esc_pos_bytes(test_content, open_drawer=False, cut=True)
-        success = self._send_raw_esc_pos(raw_bytes)
+        success = self._send_raw_esc_pos(raw_bytes, force=True)
 
         self.audit.log(
             action="TEST_TICKET_PRINTED",
