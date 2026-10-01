@@ -1,9 +1,18 @@
+import os
+import shutil
+import subprocess
 from datetime import datetime, timezone
 from typing import Any
 import httpx
 from sqlalchemy.orm import Session
 
-from caisse.domain.payment_rules import format_receipt_text
+from caisse.domain.payment_rules import (
+    format_receipt_text,
+    build_esc_pos_bytes,
+    ESC_INIT,
+    ESC_DRAWER_KICK,
+    ESC_CUT_PAPER,
+)
 from caisse.models.order import Order
 from caisse.models.payment import Payment
 from caisse.models.print_job import PrintJob
@@ -25,13 +34,16 @@ class PrintingService:
         cashier_name: str,
         is_duplicate: bool = False,
     ) -> str:
+        from caisse.models.settings import EstablishmentSetting
+        setting = self.db.query(EstablishmentSetting).first()
+
         restaurant_info = {
-            "name": "RESTAURANT MYK",
-            "address": "Cocody Riviera Palmeraie · Abidjan",
-            "phone": "+225 07 58 00 00 00",
-            "ncc": "2104598B",
-            "rccm": "CI-ABJ-2024-B-12345",
-            "footer": "Merci pour votre confiance ! À très bientôt.",
+            "name": (setting.restaurant_name if setting and setting.restaurant_name else "RESTAURANT MYK").upper(),
+            "address": setting.address if setting and setting.address else "Cocody Riviera Palmeraie · Abidjan",
+            "phone": setting.phone if setting and setting.phone else "+225 07 58 00 00 00",
+            "ncc": setting.ncc if setting and setting.ncc else "2104598B",
+            "rccm": setting.rccm if setting and setting.rccm else "CI-ABJ-2024-B-12345",
+            "footer": setting.receipt_footer if setting and setting.receipt_footer else "Merci de votre visite · A tres bientot !",
         }
 
         order_info = {
@@ -53,6 +65,7 @@ class PrintingService:
 
         payment_entries = []
         total_change = 0
+        total_tendered = 0
         for p in payments:
             payment_entries.append({
                 "method": p.method,
@@ -61,12 +74,19 @@ class PrintingService:
             })
             if p.change_xof:
                 total_change += p.change_xof
+            if p.tendered_xof:
+                total_tendered += p.tendered_xof
+
+        width = 32
+        if setting and setting.print_width in [32, 42]:
+            width = setting.print_width
 
         totals = {
             "total_ttc_xof": order.total_ttc_xof,
             "total_vat_xof": order.total_vat_xof,
-            "vat_rate": 18,
+            "vat_rate": int(setting.default_vat_rate) if setting and setting.default_vat_rate else 18,
             "change_xof": total_change,
+            "tendered_xof": total_tendered if total_tendered > 0 else None,
         }
 
         return format_receipt_text(
@@ -76,6 +96,7 @@ class PrintingService:
             payments=payment_entries,
             totals=totals,
             is_duplicate=is_duplicate,
+            width=width,
         )
 
     def create_receipt_job(
@@ -137,15 +158,45 @@ class PrintingService:
         self.db.commit()
         return job
 
-    def manual_open_drawer(self, user_id: str, device_id: str | None = None) -> bool:
-        success = False
+    def _send_raw_esc_pos(self, raw_bytes: bytes) -> bool:
+        """Envoie des octets bruts ESC/POS directement à l'imprimante thermique."""
+        # 1. Sur Linux : priorité absolue à CUPS raw (Xprinter_58) ou port USB direct
+        if shutil.which("lpr"):
+            for printer_target in ["Xprinter_58", None]:
+                cmd = ["lpr", "-o", "raw"] if printer_target is None else ["lpr", "-P", printer_target, "-o", "raw"]
+                try:
+                    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    proc.communicate(input=raw_bytes, timeout=3.0)
+                    if proc.returncode == 0:
+                        return True
+                except Exception:
+                    pass
+
+        try:
+            with open("/dev/usb/lp0", "wb") as f:
+                f.write(raw_bytes)
+                f.flush()
+                return True
+        except Exception:
+            pass
+
+        # 2. Sur Windows ou si CUPS échoue : agent d'impression local port 8090
         try:
             with httpx.Client(timeout=1.0) as client:
-                res = client.post(f"{self.agent_url}/open-drawer")
-                if res.status_code == 200:
-                    success = True
+                res = client.post(
+                    f"{self.agent_url}/print",
+                    json={"content": raw_bytes.decode("cp850", errors="replace"), "open_drawer": False, "cut": False},
+                )
+                if res.status_code in [200, 201]:
+                    return True
         except Exception:
-            success = False
+            pass
+
+        return False
+
+    def manual_open_drawer(self, user_id: str, device_id: str | None = None) -> bool:
+        pulse_bytes = ESC_INIT + ESC_DRAWER_KICK
+        success = self._send_raw_esc_pos(pulse_bytes)
 
         self.audit.log(
             action="MANUAL_DRAWER_OPENED",
@@ -158,36 +209,135 @@ class PrintingService:
         self.db.commit()
         return success
 
+    def print_test_ticket(
+        self,
+        user_id: str,
+        device_id: str | None = None,
+        custom_header: str | None = None,
+        custom_footer: str | None = None,
+        width: int = 32,
+    ) -> dict[str, Any]:
+        from caisse.models.settings import EstablishmentSetting
+
+        setting = self.db.query(EstablishmentSetting).first()
+        restaurant_name = (setting.restaurant_name if setting and setting.restaurant_name else "RESTAURANT MYK").upper()
+        address = setting.address if setting and setting.address else "Cocody Riviera Palmeraie · Abidjan"
+        phone = setting.phone if setting and setting.phone else "+225 07 58 00 00 00"
+        ncc = setting.ncc if setting and setting.ncc else "2104598B"
+        rccm = setting.rccm if setting and setting.rccm else "CI-ABJ-2024-B-12345"
+        footer = custom_footer or (setting.receipt_footer if setting and setting.receipt_footer else "Merci de votre visite · A tres bientot !")
+        welcome = custom_header if custom_header is not None else "Bienvenue au Restaurant MYK"
+
+        restaurant_info = {
+            "name": restaurant_name,
+            "address": address,
+            "phone": phone,
+            "ncc": ncc,
+            "rccm": rccm,
+            "footer": footer,
+            "welcome_message": welcome,
+        }
+
+        order_info = {
+            "order_number": "CMD-0042",
+            "table_label": "12",
+            "cashier_name": "Marc",
+            "date_str": f"{datetime.now().strftime('%d/%m/%Y')} 13:45",
+            "fne_number": "FNE-2026-10-01-MYK-0042",
+            "fne_qr_url": "https://dgi.gouv.ci/fne/verify/FNE-2026-10-01-MYK-0042",
+        }
+
+        items = [
+            {"name": "Poulet Braise Entier", "quantity": 1, "line_total_xof": 6500},
+            {"name": "Alloco Portion", "quantity": 2, "line_total_xof": 2000},
+            {"name": "Jus Bissap Maison", "quantity": 2, "line_total_xof": 2000},
+        ]
+
+        payments = [
+            {"method": "CASH", "amount_xof": 10500},
+        ]
+
+        totals = {
+            "subtotal_ht_xof": 8898,
+            "total_vat_xof": 1602,
+            "vat_rate": 18,
+            "total_ttc_xof": 10500,
+            "tendered_xof": 15000,
+            "change_xof": 4500,
+        }
+
+        test_content = format_receipt_text(
+            restaurant_info=restaurant_info,
+            order_info=order_info,
+            items=items,
+            payments=payments,
+            totals=totals,
+            is_duplicate=False,
+            width=width,
+            welcome_message=welcome,
+        )
+
+        raw_bytes = build_esc_pos_bytes(test_content, open_drawer=False, cut=True)
+        success = self._send_raw_esc_pos(raw_bytes)
+
+        self.audit.log(
+            action="TEST_TICKET_PRINTED",
+            entity="PRINTER",
+            entity_id="Xprinter_58",
+            user_id=user_id,
+            after={"success": success, "width": width},
+            device_id=device_id,
+        )
+        self.db.commit()
+        return {"status": "PRINTED" if success else "FAILED", "success": success}
+
     def get_status(self) -> dict[str, Any]:
         try:
-            with httpx.Client(timeout=1.0) as client:
+            with httpx.Client(timeout=0.8) as client:
                 res = client.get(f"{self.agent_url}/status")
                 if res.status_code == 200:
                     return res.json()
         except Exception:
             pass
 
+        # Détection CUPS ou USB Linux
+        if shutil.which("lpstat"):
+            try:
+                res = subprocess.run(["lpstat", "-p", "Xprinter_58"], capture_output=True, text=True, timeout=1.0)
+                if res.returncode == 0:
+                    return {
+                        "online": True,
+                        "paper": "ok",
+                        "model": "Xprinter XP-58IIH (USB Direct / CUPS)",
+                        "width": 32,
+                    }
+            except Exception:
+                pass
+
+        if os.path.exists("/dev/usb/lp0"):
+            return {
+                "online": True,
+                "paper": "ok",
+                "model": "Xprinter XP-58IIH (USB Direct /dev/usb/lp0)",
+                "width": 32,
+            }
+
         return {
             "online": False,
             "paper": "unknown",
-            "model": "POS-80 Windows Spooler (Déconnecté / Mode file d'attente)",
-            "width": 42,
+            "model": "POS-58 ESC/POS (Déconnecté / Mode Outbox)",
+            "width": 32,
         }
 
     def _dispatch_job_to_agent(self, job: PrintJob) -> None:
-        try:
-            with httpx.Client(timeout=1.5) as client:
-                res = client.post(
-                    f"{self.agent_url}/print",
-                    json={
-                        "content": job.content,
-                        "open_drawer": job.open_drawer,
-                        "cut": job.cut,
-                    },
-                )
-                if res.status_code in [200, 201]:
-                    job.status = "DONE"
-                    job.printed_at = datetime.now(timezone.utc)
-        except Exception as exc:
-            # Mode dégradé : l'agent est injoignable, le job reste QUEUED
-            job.error_message = str(exc)
+        raw_bytes = build_esc_pos_bytes(
+            content=job.content,
+            open_drawer=job.open_drawer,
+            cut=job.cut,
+        )
+        success = self._send_raw_esc_pos(raw_bytes)
+        if success:
+            job.status = "DONE"
+            job.printed_at = datetime.now(timezone.utc)
+        else:
+            job.error_message = "Agent d'impression ou port USB injoignable"

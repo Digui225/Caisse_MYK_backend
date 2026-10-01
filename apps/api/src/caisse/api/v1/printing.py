@@ -1,5 +1,6 @@
 from typing import Any
 from fastapi import APIRouter, Depends, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from caisse.database import get_db
@@ -62,3 +63,31 @@ async def open_drawer_manually(
     service = PrintingService(db)
     service.manual_open_drawer(user_id=current_user.id, device_id=device_id)
     return {"message": "Impulsion ouverture tiroir envoyée"}
+
+
+class TestTicketRequest(BaseModel):
+    custom_header: str | None = None
+    custom_footer: str | None = None
+    width: int = 32
+
+
+@router.post("/test-ticket", status_code=status.HTTP_200_OK, summary="Imprimer un ticket de test directement en ESC/POS")
+async def print_test_ticket(
+    payload: TestTicketRequest | None = None,
+    current_user: User = Depends(require_role("RESPONSABLE", "ADMIN")),
+    device_id: str = Depends(require_device_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    service = PrintingService(db)
+    custom_header = payload.custom_header if payload else None
+    custom_footer = payload.custom_footer if payload else None
+    width = payload.width if payload and payload.width else 32
+    return service.print_test_ticket(
+        user_id=current_user.id,
+        device_id=device_id,
+        custom_header=custom_header,
+        custom_footer=custom_footer,
+        width=width,
+    )
+
+

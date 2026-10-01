@@ -104,3 +104,29 @@ def test_format_receipt_text_rendering():
         is_duplicate=True,
     )
     assert "DUPLICATA" in dup_text
+
+
+def test_sanitize_french_text_removes_accents_and_special_chars():
+    from caisse.domain.payment_rules import sanitize_french_text
+    sample = "Désignation · Poulet Braisé DG · Tél : +225 · TOTAL RÉGLÉ · À très bientôt !"
+    cleaned = sanitize_french_text(sample)
+    assert "Designation" in cleaned
+    assert "Braise" in cleaned
+    assert "Tel :" in cleaned
+    assert "TOTAL REGLE" in cleaned
+    assert "A tres bientot !" in cleaned
+    # Ensure pure 7-bit ASCII
+    cleaned.encode("ascii")
+
+
+def test_esc_pos_contains_chinese_cancellation_and_qr():
+    from caisse.domain.payment_rules import FS_CANCEL_CHINESE, build_esc_pos_qr
+    raw = build_esc_pos_bytes("Test accents: Théâtre", open_drawer=False, cut=True, qr_data="https://dgi.ci/test")
+    assert FS_CANCEL_CHINESE in raw
+    assert b"Theatre" in raw
+    assert b"\xc3\xa9" not in raw  # No UTF-8 é that causes Chinese ideograms!
+    
+    # Test QR code generator
+    qr_bytes = build_esc_pos_qr("https://dgi.ci/fne/123", size=4)
+    assert b"\x1d\x28\x6b" in qr_bytes
+
