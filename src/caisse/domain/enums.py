@@ -68,6 +68,7 @@ class StockMovementType(StrEnum):
 
 class FneDocumentType(StrEnum):
     FNE = "FNE"
+    REFUND = "REFUND"  # facture d'avoir FNE, rattachée à une FNE certifiée
     RNE = "RNE"
     DAILY_SUMMARY = "DAILY_SUMMARY"
 

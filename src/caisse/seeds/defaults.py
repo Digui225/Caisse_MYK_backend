@@ -22,6 +22,12 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "cash.rounding_xof": 5,
     "cash.denominations_xof": [10000, 5000, 2000, 1000, 500, 250, 200, 100, 50, 25, 10, 5],
     "fne.mode": "manual",
+    # tels que configurés dans l'espace FNE (sinon 400 « Point of sale is invalid »)
+    "fne.point_of_sale": "",
+    "fne.establishment": "",
+    # client de passage (B2C) : la FNE exige nom, téléphone et e-mail
+    "fne.walk_in_client": {"company_name": "CLIENT DIVERS", "phone": "", "email": ""},
+    "fne.sticker_alert_threshold": 20,
     "ui.lock_after_seconds": 120,
 }
 

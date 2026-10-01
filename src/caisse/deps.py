@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 
 from caisse.database import get_db
 from caisse.domain.enums import UserRole, role_at_least
+from caisse.domain.ports import FneProvider
 from caisse.errors import InsufficientPrivilegeError, TokenExpiredError
+from caisse.infrastructure.fne import get_fne_provider
 from caisse.models.user import User
 from caisse.services import auth_service
 from caisse.services.audit_service import RequestContext
@@ -65,3 +67,11 @@ def require_role(minimum: UserRole) -> Callable[[User], User]:
 
 Responsable = Annotated[User, Depends(require_role(UserRole.RESPONSABLE))]
 Admin = Annotated[User, Depends(require_role(UserRole.ADMIN))]
+
+
+def fne_provider() -> FneProvider | None:
+    """Selon `FNE_PROVIDER` : API DGI, simulateur, ou `None` en mode manuel."""
+    return get_fne_provider()
+
+
+FneProviderDep = Annotated[FneProvider | None, Depends(fne_provider)]

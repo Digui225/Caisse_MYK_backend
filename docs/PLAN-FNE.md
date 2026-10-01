@@ -69,33 +69,34 @@ MANUAL : document traité hors API.
 - [x] `MockFneProvider` (dév. et tests) et sélection selon `FNE_PROVIDER`
 - [x] Tests du client avec `httpx.MockTransport` (`tests/unit/infrastructure/test_fne_client.py`) ; à compléter avec les traces réelles de la sonde
 
-### Phase 4 — Schéma (migration Alembic réversible)
-- [ ] `fne_documents` : `fne_invoice_id`, `parent_document_id` (avoir → vente), `items_map` (JSONB : ligne caisse → id article FNE), `fne_amount_ttc`, `sticker_balance`, `is_uncertain`
-- [ ] Enum `FneDocumentType.REFUND` (prévenir le front, contrat §6)
-- [ ] Index unique partiel : une vente FNE non échouée par commande (D6)
-- [ ] Paramètres métier : `fne.point_of_sale`, `fne.establishment`, `fne.vat_codes`, `fne.payment_methods`, `fne.walk_in_client`, `fne.sticker_alert_threshold`
+### Phase 4 — Schéma (migration `0002`, réversible)
+- [x] `fne_documents` : `template`, `fne_invoice_id`, `parent_document_id` (avoir → vente), `items_map` (ligne caisse → id article FNE), `fne_amount_ttc_xof`, `sticker_balance`, `is_uncertain`, `created_by_user_id`
+- [x] Enum `FneDocumentType.REFUND` (⚠ nouvelle valeur : prévenir le front, contrat §6)
+- [x] Index unique partiel : une FNE de vente par commande (D6) ; NCC client unique
+- [x] Paramètres métier : `fne.point_of_sale`, `fne.establishment`, `fne.walk_in_client`, `fne.sticker_alert_threshold` (valeur par défaut si la clé manque en base)
 
 ### Phase 5 — Service (`services/fne_service.py`)
-- [ ] `create_for_order` : copie figée de la commande soldée, idempotent par commande
-- [ ] `submit` : verrou de ligne, passage en `SUBMITTING` commité **avant** l'appel, appel synchrone (`fne_sync_timeout_seconds`), transitions de la §2, audit
-- [ ] `refund` : avoir total ou partiel à partir de `items_map`
-- [ ] `retry`, `resolve_uncertain` (certifiée avec n° saisi, ou non certifiée → renvoi), `mark_manual`
-- [ ] Alerte stock de stickers (`warning` ou solde sous le seuil) → journal + `/health`
+- [x] `issue_for_order` : commande soldée, une FNE par commande (rappel = même document, sans appel), FNE refusée reconstruite
+- [x] `_submit` : `SUBMITTING` commité **avant** l'appel, appel synchrone (`FNE_SYNC_TIMEOUT_SECONDS`), transitions de la §2, audit `fne.submit`
+- [x] `refund` : avoir total ou partiel à partir de `items_map`, quantités déjà reprises déduites
+- [x] `retry`, `resolve` (certifiée avec n° relevé, ou non certifiée → renvoi) ; mode `manual` → `MANUAL`
+- [x] Alerte stickers : avertissement `FNE_STICKER_LOW` sous `fne.sticker_alert_threshold`
+- [ ] Alerte stickers dans `/health` et le journal (avec le worker)
 
-### Phase 6 — API (contrat §4.8, + ajouts non cassants)
-- [ ] `GET /customers?search=&ncc=` · `POST /customers` — contrôle du **format** du NCC côté caisse (7 chiffres + 1 lettre d'après les exemples DGI, à confirmer) : la FNE ne le vérifie pas à la validation
-- [ ] `POST /orders/{id}/fne` : template (B2C par défaut, B2B/B2G avec `customer_id`), commande soldée obligatoire, soumission synchrone 4 s puis file
-- [ ] `GET /fne/documents?status=&business_date=` · `POST /fne/documents/{id}/retry` (R)
-- [ ] `GET /fne/documents/{id}/duplicate` (C) · `GET /fne/pending-count` (C)
-- [ ] `GET /fne/daily-summary?business_date=` · `GET /fne/daily-summary/{id}/export` (R)
-- [ ] Ajouts (endpoints nouveaux = non cassants) : `POST /fne/documents/{id}/resolve` (R, cas incertain) · `POST /fne/documents/{id}/refund` (R, avoir)
-- [ ] Erreurs : refus DGI → `FNE_REJECTED` ; nouveaux codes `FNE_NCC_REQUIRED`, `FNE_VAT_RATE_UNMAPPED`… à ajouter au catalogue §2 avec le front
-- [ ] Tests d'intégration avec `MockFneProvider`
+### Phase 6 — API (contrat §4.8 + ajouts non cassants)
+- [x] `GET /customers?search=&ncc=` · `POST /customers` (NCC : 7 chiffres + 1 lettre, normalisé)
+- [x] `POST /orders/{id}/fne` (C) · `GET /orders/{id}/fne` (C, ajout)
+- [x] `GET /fne/documents` (R) · `POST /fne/documents/{id}/retry` (R) · `POST …/resolve` (R, ajout) · `POST …/refund` (R, ajout)
+- [x] `GET /fne/documents/{id}/duplicate` (C) · `GET /fne/pending-count` (C) · `GET /fne/daily-summary` (R, calculé à la volée)
+- [ ] `GET /fne/daily-summary/{id}/export` : nécessite le récapitulatif figé à la clôture (avec le Z)
+- [x] Codes d'erreur : `CUSTOMER_NCC_EXISTS`, `FNE_ORDER_NOT_PAID`, `FNE_NOT_CONFIGURED`, `FNE_DOCUMENT_STATE`, `FNE_REFUND_EXCEEDS`, `FNE_*` de traduction (422) ; avertissements `FNE_REJECTED`, `FNE_UNCERTAIN`, `FNE_QUEUED`, `FNE_STICKER_LOW` → à valider avec le front
+- [x] 11 tests d'intégration (`tests/integration/test_fne.py`) contre `MockFneProvider`
 
 ### Phase 7 — Worker de renvoi
 - [ ] `python -m caisse.cli fne-worker` (service dans `docker-compose.yml`) : traite les `QUEUED` échus avec un backoff exponentiel plafonné, ne touche jamais aux documents incertains (`is_uncertain`)
 
 ### Phase 8 — Branchements (dépendent de L4)
+- [ ] Encaissement : `payment_method` déduit des paiements réels (testé aujourd'hui avec des paiements insérés en base)
 - [ ] Remboursement → avoir FNE
 - [ ] FNE remise en A4 via le lien de vérification (`token`) renvoyé par l'API (D10) ; n° FNE optionnel sur le ticket de caisse
 

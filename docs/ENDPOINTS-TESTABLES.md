@@ -1,6 +1,6 @@
-# Endpoints testables — état au 30/09/2026
+# Endpoints testables — état au 01/10/2026
 
-Ce document décrit les **30 routes réellement implémentées** dans `caisse-backend`, telles que le code les expose aujourd'hui. Le contrat cible complet est dans [`03-CONTRAT-API.md`](../../projet_caisse_MYK/03-CONTRAT-API.md). Toute route du contrat absente d'ici renvoie `404 NOT_FOUND`.
+Ce document décrit les **39 routes réellement implémentées** dans `caisse-backend`, telles que le code les expose aujourd'hui. Le contrat cible complet est dans [`03-CONTRAT-API.md`](../../projet_caisse_MYK/03-CONTRAT-API.md). Toute route du contrat absente d'ici renvoie `404 NOT_FOUND`.
 
 ## Sommaire
 
@@ -14,14 +14,15 @@ Ce document décrit les **30 routes réellement implémentées** dans `caisse-ba
 | 5 | [Tables](#5-tables) | `GET /tables`, `GET /tables/board` | Salle et plan de salle (écran d'accueil) |
 | 6 | [Sessions de caisse](#6-sessions-de-caisse) | `GET /cash-sessions/current`, `POST /cash-sessions`, `GET …/{id}/x-report`, `POST …/{id}/close`, `GET …/{id}/z-report`, `GET /cash-sessions`, `POST …/{id}/movements` | Ouverture, mouvements de tiroir, rapports X et Z, clôture |
 | 7 | [Commandes](#7-commandes) | `POST /orders`, `GET /orders`, `GET /orders/{id}`, `POST …/{id}/items`, `PATCH …/items/{item_id}`, `DELETE …/items/{item_id}`, `POST …/{id}/cancel` | Prise de commande, lignes (ajout, quantité, retrait), annulation sous autorisation |
-| 8 | [Scénario de test complet](#8-scénario-de-test-complet-curl--jq) | — | Tout le parcours en curl, de la connexion à la clôture |
-| 9 | [Pas encore testable](#9-pas-encore-testable) | — | Routes du contrat pas encore implémentées |
+| 8 | [Clients entreprise et FNE](#8-clients-entreprise-et-fne) | `GET/POST /customers`, `POST/GET /orders/{id}/fne`, `GET /fne/documents`, `POST …/{id}/retry`, `POST …/{id}/resolve`, `POST …/{id}/refund`, `GET …/{id}/duplicate`, `GET /fne/pending-count`, `GET /fne/daily-summary` | Facture normalisée DGI à la demande, avoirs, suivi |
+| 9 | [Scénario de test complet](#9-scénario-de-test-complet-curl--jq) | — | Tout le parcours en curl, de la connexion à la clôture |
+| 10 | [Pas encore testable](#10-pas-encore-testable) | — | Routes du contrat pas encore implémentées |
 
 **Par où commencer :**
 
 1. Préparer la base avec `docker compose exec api python -m caisse.cli …` : `bootstrap` (caisse n° 1), `create-user` (un ADMIN), `seed --demo` (menu + 15 tables).
 2. Ouvrir Swagger (http://localhost:8001/docs), se connecter avec `POST /auth/login`, coller l'`access_token` dans **Authorize**.
-3. Suivre le parcours d'une journée : ouvrir la caisse (§6) → prendre des commandes (§7) → clôturer (§6). Le [§8](#8-scénario-de-test-complet-curl--jq) fait la même chose en curl.
+3. Suivre le parcours d'une journée : ouvrir la caisse (§6) → prendre des commandes (§7) → clôturer (§6). Le [§9](#9-scénario-de-test-complet-curl--jq) fait la même chose en curl.
 
 ---
 
@@ -107,6 +108,12 @@ Le front doit se fier à **`code`**, qui est stable. `title` et `detail` sont de
 | `IDEMPOTENCY_CONFLICT` | 409 | Même `Idempotency-Key`, corps différent |
 | `TABLE_ALREADY_OCCUPIED` | 409 | La table porte déjà une commande active (`meta.order_id` : celle à ouvrir) |
 | `ORDER_NOT_EDITABLE` | 409 | Commande soldée ou annulée (`meta.status`), ou modification qui ferait passer le total sous le montant déjà encaissé |
+| `CUSTOMER_NCC_EXISTS` | 409 | NCC déjà enregistré (`meta.customer_id` : client à réutiliser) |
+| `FNE_ORDER_NOT_PAID` | 409 | FNE demandée sur une commande non soldée |
+| `FNE_NOT_CONFIGURED` | 409 | Paramètres `fne.point_of_sale` / `fne.establishment` vides (`meta.missing_settings`) |
+| `FNE_DOCUMENT_STATE` | 409 | Action interdite dans l'état du document FNE (`meta.reason`) |
+| `FNE_CUSTOMER_REQUIRED`, `FNE_NCC_REQUIRED`, `FNE_NO_PAYMENT`, `FNE_VAT_RATE_UNMAPPED`, `FNE_PAYMENT_METHOD_UNMAPPED`, `FNE_FIELD_REQUIRED` | 422 | Commande impossible à traduire en FNE (client, NCC, paiement, taux de TVA, client de passage non paramétré) |
+| `FNE_REFUND_EXCEEDS` | 422 | Avoir supérieur à la quantité certifiée restante (`meta.available`) |
 | `INTERNAL_ERROR` | 500 | Erreur imprévue. La trace est dans les logs, jamais dans la réponse. |
 
 ---
@@ -1013,7 +1020,165 @@ Trace dans `audit_logs` : `order.cancel`.
 
 ---
 
-## 8. Scénario de test complet (curl + jq)
+## 8. Clients entreprise et FNE
+
+La **FNE** (facture normalisée électronique) est certifiée par la plateforme de la DGI. Elle est émise **à la demande**, sur une commande soldée, jamais automatiquement à l'encaissement. Plan et décisions : [`PLAN-FNE.md`](PLAN-FNE.md).
+
+### Préparer le test
+
+1. **Choisir le fournisseur FNE** dans `.env`, puis recréer le conteneur (`docker compose … up -d --force-recreate api`) :
+
+   | `FNE_PROVIDER` | Effet |
+   |---|---|
+   | `manual` (défaut) | Aucun appel : le document passe en `MANUAL`, à saisir dans l'application FNE |
+   | `mock` | FNE simulée, réponses au format réel, sans réseau : **pour tester l'API** |
+   | `api` | Plateforme DGI (`FNE_API_BASE_URL`, `FNE_API_KEY`) |
+
+2. **Renseigner les paramètres FNE** (pas encore de route `/settings`) :
+
+   ```bash
+   docker exec -i infra-db sh -c 'psql -U "$POSTGRES_USER" -d caisse' <<'SQL'
+   INSERT INTO settings (key, value) VALUES
+     ('fne.point_of_sale', '"CAISSE-1"'),
+     ('fne.establishment', '"RESTAURANT CHEZ SYLLA PLUS"'),
+     ('fne.walk_in_client', '{"company_name":"CLIENT DIVERS","phone":"0748735573","email":"restaurantmykpro@gmail.com"}')
+   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+   SQL
+   ```
+
+3. **Solder une commande.** L'encaissement (lot L4) n'existe pas encore : on solde une commande de test directement en base (remplacer `<ORDER_ID>`) :
+
+   ```bash
+   docker exec -i infra-db sh -c 'psql -U "$POSTGRES_USER" -d caisse' <<'SQL'
+   INSERT INTO payments (id, order_id, cash_session_id, method, amount_xof, change_xof, status,
+                         idempotency_key, created_by_user_id, created_at)
+     SELECT gen_random_uuid(), o.id, o.cash_session_id, 'CASH', o.total_ttc_xof, 0, 'CAPTURED',
+            'test-' || o.id, o.opened_by_user_id, now()
+     FROM orders o WHERE o.id = '<ORDER_ID>';
+   UPDATE orders SET status = 'PAID', paid_xof = total_ttc_xof, due_xof = 0, paid_at = now()
+     WHERE id = '<ORDER_ID>';
+   SQL
+   ```
+
+### Statuts d'un document FNE
+
+| `status` | `is_uncertain` | Sens | Action |
+|---|---|---|---|
+| `CERTIFIED` | false | Certifiée : `external_number` et `qr_payload` (lien de vérification DGI = page A4 imprimable) | — |
+| `QUEUED` | false | FNE injoignable ou clé refusée : rien n'a été certifié | `retry` (renvoi automatique : à venir) |
+| `FAILED` | false | Refusée par la DGI (données) | Corriger (client, paramètres) puis `retry` ou réémettre |
+| `SUBMITTING` | **true** | Issue inconnue (délai dépassé, erreur 500) : la facture a **peut-être** été créée | Vérifier dans l'espace FNE, puis `resolve` |
+| `MANUAL` | false | Mode manuel | Saisie dans l'application FNE |
+
+Un document incertain n'est **jamais** renvoyé sans vérification : l'API FNE n'a aucune protection contre les doublons.
+
+### `GET /customers?search=&ncc=` — rechercher un client entreprise
+
+Rôle : CAISSIER. `search` cherche dans la raison sociale et le NCC ; `ncc` filtre sur le début du NCC. 50 résultats au plus.
+
+### `POST /customers` — créer un client entreprise
+
+```json
+{ "company_name": "CGECI", "ncc": "9506466A", "phone": "0709080765", "email": "contact@cgeci.ci" }
+```
+
+Le NCC doit comporter **7 chiffres et 1 lettre** (espaces et minuscules acceptés : `"9506 466a"` devient `"9506466A"`). La FNE ne vérifie pas le NCC à la saisie : ce contrôle est le seul filet. Réponse `201` : le client.
+
+| Code | Cas |
+|---|---|
+| `409 CUSTOMER_NCC_EXISTS` | NCC déjà enregistré ; `meta.customer_id` donne le client existant |
+| `422 VALIDATION_ERROR` | Format du NCC (`meta.fields[0].loc = ["body","ncc"]`) |
+
+### `POST /orders/{id}/fne` — émettre la FNE d'une commande
+
+Rôle : CAISSIER.
+
+```json
+{ "template": "B2B", "customer_id": "…", "payment_method": null }
+```
+
+| Champ | Défaut | Sens |
+|---|---|---|
+| `template` | `B2C` | `B2C` particulier · `B2B` entreprise (NCC obligatoire) · `B2G` administration · `B2F` international |
+| `customer_id` | null | Obligatoire sauf en `B2C` |
+| `payment_method` | null | Sinon : moyen du plus gros montant encaissé (la FNE n'en accepte qu'un) |
+
+Réponse `201` : `{ "document": {…}, "warnings": [] }`. L'issue se lit dans `document.status` et `warnings` (`FNE_REJECTED`, `FNE_UNCERTAIN`, `FNE_QUEUED`, `FNE_STICKER_LOW`) : un refus de la DGI n'est **pas** une erreur HTTP.
+
+**Une seule FNE par commande** : si elle existe déjà (et n'a pas été refusée), elle est renvoyée telle quelle en `200`, sans nouvel appel à la DGI. Une FNE refusée est reconstruite et renvoyée.
+
+| Code | Cas |
+|---|---|
+| `404 NOT_FOUND` | Commande ou client inconnu |
+| `409 FNE_ORDER_NOT_PAID` | Commande non soldée |
+| `409 FNE_NOT_CONFIGURED` | Point de vente ou établissement non paramétré |
+| `422 FNE_CUSTOMER_REQUIRED` | `B2B`, `B2G` ou `B2F` sans `customer_id` |
+| `422 FNE_NCC_REQUIRED` | `B2B` avec un client sans NCC |
+| `422 FNE_FIELD_REQUIRED` | Client de passage sans téléphone ou e-mail (`fne.walk_in_client`) |
+| `422 FNE_NO_PAYMENT`, `FNE_VAT_RATE_UNMAPPED`, `FNE_PAYMENT_METHOD_UNMAPPED` | Paiement absent, taux de TVA ou moyen de paiement sans code FNE |
+
+À tester (`FNE_PROVIDER=mock`) : émettre en B2C → `201 CERTIFIED` ; **rappeler** → `200`, même `id` ; B2B sans client → `422` ; commande non soldée → `409`.
+
+### `GET /orders/{id}/fne` — FNE d'une commande
+
+Rôle : CAISSIER. `404 NOT_FOUND` si aucune FNE n'a été émise.
+
+### `GET /fne/documents?status=&business_date=` — suivi
+
+Rôle : RESPONSABLE. 200 documents au plus, les plus récents en premier.
+
+### `POST /fne/documents/{id}/retry` — renvoyer
+
+Rôle : RESPONSABLE. Pour un document `QUEUED`, `FAILED` (reconstruit avec le client et les paramètres actuels) ou `PENDING`. Réponse `200` : `{ document, warnings }`.
+
+`409 FNE_DOCUMENT_STATE` : `meta.reason = "uncertain"` (passer par `resolve`) ou `"not_retryable"` (certifié, manuel ou en cours).
+
+### `POST /fne/documents/{id}/resolve` — trancher un cas incertain
+
+Rôle : RESPONSABLE. Après vérification dans l'espace FNE, rubrique « Reçus et factures émis » :
+
+```json
+{ "is_certified": true, "external_number": "1304777N26000000023" }
+```
+
+- facture **numérotée** dans l'espace FNE → `is_certified: true` avec le n° relevé ; le document passe `CERTIFIED`. Il n'a alors pas les identifiants FNE nécessaires à un avoir par API ;
+- facture **absente ou sans numéro** → `{ "is_certified": false }` ; le document est renvoyé.
+
+`409 FNE_DOCUMENT_STATE` (`meta.reason = "not_uncertain"`) ; `422 VALIDATION_ERROR` si le n° manque.
+
+### `POST /fne/documents/{id}/refund` — avoir
+
+Rôle : RESPONSABLE. Avoir total ou partiel sur une FNE de vente certifiée par l'API :
+
+```json
+{ "items": [{ "order_item_id": "…", "quantity": 1 }] }
+```
+
+Réponse `201` : le document d'avoir (`type: "REFUND"`, `parent_document_id`), mêmes statuts que l'émission. Les quantités déjà reprises sont déduites.
+
+| Code | Cas |
+|---|---|
+| `404 NOT_FOUND` | Document ou ligne absente de la FNE |
+| `409 FNE_DOCUMENT_STATE` | `meta.reason = "not_refundable"` : non certifiée, manuelle, ou certifiée hors API |
+| `422 FNE_REFUND_EXCEEDS` | Quantité supérieure au reste (`meta.available`) |
+
+### `GET /fne/documents/{id}/duplicate` — duplicata
+
+Rôle : CAISSIER. Le document certifié ; `qr_payload` ouvre la page A4 de la DGI à imprimer. `409 FNE_DOCUMENT_STATE` (`not_certified`) sinon.
+
+### `GET /fne/pending-count` — compteur de la barre d'état
+
+Rôle : CAISSIER. `{ "pending": 2, "uncertain": 1, "failed": 0 }` : documents en attente d'une action, dont incertains et refusés.
+
+### `GET /fne/daily-summary?business_date=` — récapitulatif de la journée
+
+Rôle : RESPONSABLE. Commandes soldées, part couverte par une FNE certifiée, documents en attente, ventes par groupe fiscal. Journée par défaut : celle de la session ouverte.
+
+Trace dans `audit_logs` : `customer.create`, `fne.issue`, `fne.submit` (à chaque appel à la DGI), `fne.retry`, `fne.resolve`, `fne.refund`.
+
+---
+
+## 9. Scénario de test complet (curl + jq)
 
 À lancer dans un terminal. Remplacer `ADMIN_PIN` par le PIN de l'administrateur créé avec `caisse.cli create-user`.
 
@@ -1150,7 +1315,7 @@ docker exec infra-db sh -c 'psql -U "$POSTGRES_USER" -d caisse -c \
 
 ---
 
-## 9. Pas encore testable
+## 10. Pas encore testable
 
 | Lot | Routes du contrat absentes |
 |---|---|
@@ -1158,6 +1323,6 @@ docker exec infra-db sh -c 'psql -U "$POSTGRES_USER" -d caisse -c \
 | L3 | `POST /orders/{id}/reprint` (arrivera avec la file d'impression) |
 | L4 | `/orders/{id}/payments`, `/refunds`, `/payment-methods`, `/printing/*` |
 | L5 | `/stock/*` |
-| L6 | `/customers`, `/orders/{id}/fne`, `/fne/*` |
+| L6 | `GET /fne/daily-summary/{id}/export` (export du récapitulatif figé à la clôture) |
 | L5–L6 | `/reports/*` |
 | Admin | `/settings`, `/cash-registers` |

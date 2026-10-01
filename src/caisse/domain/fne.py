@@ -182,6 +182,17 @@ def build_sale_request(
     return body
 
 
+def json_safe(value: Any) -> Any:
+    """Copie sérialisable en JSON (colonne JSONB) : `Decimal` entier → int, sinon float."""
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
+    if isinstance(value, dict):
+        return {key: json_safe(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [json_safe(item) for item in value]
+    return value
+
+
 def build_refund_request(items: Sequence[tuple[str, int]]) -> dict[str, Any]:
     """Corps de `POST /external/invoices/{id}/refund` : (id d'article FNE, quantité rendue)."""
     if not items:

@@ -67,6 +67,29 @@ IdempotencyConflictError = _error("IdempotencyConflictError", 409, "Clé d'idemp
 NotFoundError = _error("NotFoundError", 404, "Ressource introuvable")
 PinAlreadyUsedError = _error("PinAlreadyUsedError", 409, "Ce code PIN est déjà attribué")
 ValidationError = _error("ValidationError", 422, "Données invalides", "VALIDATION_ERROR")
+CustomerNccExistsError = _error("CustomerNccExistsError", 409, "NCC déjà enregistré")
+FneOrderNotPaidError = _error("FneOrderNotPaidError", 409, "Commande non soldée")
+FneNotConfiguredError = _error(
+    "FneNotConfiguredError", 409, "Point de vente ou établissement FNE non paramétré"
+)
+FneDocumentStateError = _error(
+    "FneDocumentStateError", 409, "Document FNE dans un état qui interdit cette action"
+)
+FneRefundExceedsError = _error(
+    "FneRefundExceedsError", 422, "Quantité d'avoir supérieure à la quantité certifiée"
+)
+
+
+class FneInvalidDataError(DomainError):
+    """Commande impossible à traduire en FNE ; `code` précis venant du domaine
+    (`FNE_NCC_REQUIRED`, `FNE_VAT_RATE_UNMAPPED`, `FNE_NO_PAYMENT`…)."""
+
+    status = 422
+    title = "Données insuffisantes pour la FNE"
+
+    def __init__(self, code: str, detail: str, meta: dict[str, Any] | None = None) -> None:
+        super().__init__(detail, meta)
+        self.code = code
 
 
 def _problem(
