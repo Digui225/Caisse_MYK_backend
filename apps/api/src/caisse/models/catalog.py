@@ -28,7 +28,7 @@ class Product(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     short_name: Mapped[str] = mapped_column(String(20), nullable=False)  # Libellé ticket
     price_xof: Mapped[int] = mapped_column(Integer, nullable=False)
-    vat_rate: Mapped[float] = mapped_column(Numeric(4, 2), default=18.00, nullable=False)
+    vat_rate: Mapped[float] = mapped_column(Numeric(4, 2), default=0.00, nullable=False)
     track_stock: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_custom: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

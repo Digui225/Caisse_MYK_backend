@@ -60,7 +60,7 @@ class OrderItem(Base, TimestampMixin):
     category_snapshot: Mapped[str] = mapped_column(String(100), nullable=False)
     unit_price_xof: Mapped[int] = mapped_column(Integer, nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    vat_rate: Mapped[float] = mapped_column(Numeric(4, 2), default=18.00, nullable=False)
+    vat_rate: Mapped[float] = mapped_column(Numeric(4, 2), default=0.00, nullable=False)
     line_total_xof: Mapped[int] = mapped_column(Integer, nullable=False)
     note: Mapped[str | None] = mapped_column(String(255), nullable=True)
 

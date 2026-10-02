@@ -88,7 +88,7 @@ class PrintingService:
         totals = {
             "total_ttc_xof": order.total_ttc_xof,
             "total_vat_xof": order.total_vat_xof,
-            "vat_rate": int(setting.default_vat_rate) if setting and setting.default_vat_rate else 18,
+            "vat_rate": int(setting.default_vat_rate) if setting and setting.default_vat_rate is not None else 0,
             "change_xof": total_change,
             "tendered_xof": total_tendered if total_tendered > 0 else None,
         }
@@ -296,9 +296,8 @@ class PrintingService:
         ]
 
         totals = {
-            "subtotal_ht_xof": 8898,
-            "total_vat_xof": 1602,
-            "vat_rate": 18,
+            "total_vat_xof": 0,
+            "vat_rate": 0,
             "total_ttc_xof": 10500,
             "tendered_xof": 15000,
             "change_xof": 4500,

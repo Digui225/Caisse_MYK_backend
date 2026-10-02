@@ -161,7 +161,7 @@ class OrderService:
             name_snapshot = payload.custom_name
             category_snapshot = "Hors Menu"
             unit_price = payload.unit_price_xof
-            vat_rate = 18.00
+            vat_rate = 0.00
         else:
             raise CaisseException(
                 code="INVALID_ITEM_SPECIFICATION",

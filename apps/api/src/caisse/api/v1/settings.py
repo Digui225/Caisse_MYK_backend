@@ -28,7 +28,7 @@ def _get_or_create_settings(db: Session) -> EstablishmentSetting:
             rccm="CI-ABJ-2026-B-0000",
             address="Abidjan, Côte d'Ivoire",
             phone="+225 0102030405",
-            default_vat_rate=18.0,
+            default_vat_rate=0.0,
             receipt_footer="Merci de votre visite et à très bientôt !",
             print_width=48,
             screen_lock_timeout_seconds=120,

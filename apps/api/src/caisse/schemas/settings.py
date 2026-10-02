@@ -8,7 +8,7 @@ class EstablishmentSettingsResponse(BaseSchema):
     rccm: str = "CI-ABJ-2026-B-0000"
     address: str = "Abidjan, Côte d'Ivoire"
     phone: str = "+225 0102030405"
-    default_vat_rate: float = 18.0
+    default_vat_rate: float = 0.0
     receipt_footer: str = "Merci de votre visite et à très bientôt !"
     print_width: int = 48
     screen_lock_timeout_seconds: int = 120

@@ -314,15 +314,16 @@ def format_receipt_text(
     lines.append(sep_line)
 
     # 4. Totaux & Taxes
-    if "subtotal_ht_xof" in totals:
-        lines.append(row("Sous-total HT", f"{totals['subtotal_ht_xof']:,} F".replace(",", " ")))
-    elif "total_vat_xof" in totals and "total_ttc_xof" in totals:
-        subtotal_ht = totals["total_ttc_xof"] - totals["total_vat_xof"]
-        lines.append(row("Sous-total HT", f"{subtotal_ht:,} F".replace(",", " ")))
-
-    vat_rate = totals.get("vat_rate", 18)
+    vat_rate = totals.get("vat_rate", 0)
     vat_amt = totals.get("total_vat_xof", 0)
-    lines.append(row(f"TVA ({vat_rate}%)", f"{vat_amt:,} F".replace(",", " ")))
+    if vat_amt > 0 and vat_rate > 0:
+        if "subtotal_ht_xof" in totals:
+            lines.append(row("Sous-total HT", f"{totals['subtotal_ht_xof']:,} F".replace(",", " ")))
+        elif "total_ttc_xof" in totals:
+            subtotal_ht = totals["total_ttc_xof"] - vat_amt
+            lines.append(row("Sous-total HT", f"{subtotal_ht:,} F".replace(",", " ")))
+        lines.append(row(f"TVA ({vat_rate}%)", f"{vat_amt:,} F".replace(",", " ")))
+
     lines.append(row("TOTAL TTC", f"{totals.get('total_ttc_xof', 0):,} F CFA".replace(",", " ")))
 
     lines.append(sep_line)

@@ -27,7 +27,7 @@ class ProductResponse(BaseSchema):
     name: str
     short_name: str
     price_xof: int
-    vat_rate: float = 18.00
+    vat_rate: float = 0.00
     track_stock: bool = False
     is_custom: bool = False
     is_active: bool = True
@@ -41,7 +41,7 @@ class ProductCreateRequest(BaseModel):
     name: str
     short_name: str = Field(..., max_length=20)
     price_xof: int = Field(..., ge=0)
-    vat_rate: float = 18.00
+    vat_rate: float = 0.00
     track_stock: bool = False
     color: str | None = None
     sku: str | None = None
