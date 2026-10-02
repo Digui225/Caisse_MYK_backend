@@ -211,8 +211,20 @@ def legacy_generate(
     provider: Any = Depends(get_fne_provider),
 ) -> dict[str, Any]:
     from caisse.domain.fne import FneTemplate
+    from caisse.models.customer import Customer
 
-    template = FneTemplate.B2B if payload.customer_id else FneTemplate.B2C
+    if payload.template:
+        template = payload.template
+    elif payload.customer_id:
+        cust = db.get(Customer, str(payload.customer_id))
+        if cust and cust.ncc:
+            template = FneTemplate.B2B
+        elif cust and cust.tax_regime in ("B2G", "B2F", "B2C"):
+            template = FneTemplate(cust.tax_regime)
+        else:
+            template = FneTemplate.B2C
+    else:
+        template = FneTemplate.B2C
     doc, submitted = fne_service.issue_for_order(
         db,
         payload.order_id,

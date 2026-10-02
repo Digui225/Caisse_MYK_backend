@@ -146,6 +146,7 @@ class FneDocumentResponse(BaseSchema):
 class FneGenerateRequest(BaseSchema):
     order_id: str
     customer_id: Optional[str] = None
+    template: Optional[FneTemplate] = None
 
 
 class FneRetryRequest(BaseSchema):
