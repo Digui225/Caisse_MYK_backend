@@ -102,17 +102,41 @@ def should_open_drawer(method: str, is_reprint: bool = False, is_manual_override
     return method == PaymentMethod.CASH
 
 
+from pathlib import Path
+
+_CACHED_LOGO_BYTES: bytes | None = None
+
+
+def get_esc_pos_logo_bytes() -> bytes | None:
+    """Charge la séquence raster ESC/POS monochrome du logo Sylla Plus."""
+    global _CACHED_LOGO_BYTES
+    if _CACHED_LOGO_BYTES is not None:
+        return _CACHED_LOGO_BYTES
+
+    assets_dir = Path(__file__).resolve().parent.parent / "assets"
+    bin_file = assets_dir / "sylla_logo_escpos.bin"
+    if bin_file.exists():
+        try:
+            _CACHED_LOGO_BYTES = bin_file.read_bytes()
+            return _CACHED_LOGO_BYTES
+        except Exception:
+            pass
+    return None
+
+
 def build_esc_pos_bytes(
     content: str,
     open_drawer: bool = False,
     cut: bool = True,
     qr_data: str | None = None,
+    include_logo: bool = True,
 ) -> bytes:
     """Construit la séquence d'octets ESC/POS complète avec :
     - Réinitialisation et annulation forcée du mode chinois
     - Marge d'amorce haute (évite de rogner l'en-tête)
     - Déclenchement RJ11 tiroir-caisse si demandé
     - Traduction ASCII 7-bit de l'intégralité du texte
+    - Rendu du logo graphique monochrome thermique
     - Rendu natif des QR codes 2D
     - Marge basse d'éjection (4 sauts de ligne)
     - Coupe papier si supporté
@@ -135,22 +159,36 @@ def build_esc_pos_bytes(
     if open_drawer:
         raw.extend(ESC_DRAWER_KICK)
 
-    # 6. Traitement des lignes de texte et détection de balises [QR_CODE: ...]
+    # 6. Traitement des lignes de texte et détection de balises [LOGO] et [QR_CODE: ...]
+    logo_already_printed = False
     for line in content.split("\n"):
         stripped = line.strip()
-        if stripped.startswith("[QR_CODE:") and stripped.endswith("]"):
+        if stripped == "[LOGO]":
+            if not logo_already_printed and include_logo:
+                logo_bytes = get_esc_pos_logo_bytes()
+                if logo_bytes:
+                    raw.extend(logo_bytes)
+                    raw.extend(b"\n")
+                    logo_already_printed = True
+        elif stripped == "[NO_LOGO]":
+            pass
+        elif stripped.startswith("[QR_CODE:") and stripped.endswith("]"):
             qr_content = stripped[len("[QR_CODE:"): -1].strip()
             if qr_content:
                 raw.extend(b"\n\x1b\x61\x01")  # Centrage
                 raw.extend(build_esc_pos_qr(qr_content, size=4))
                 raw.extend(b"\x1b\x61\x00\n")  # Retour alignement gauche
         elif stripped == "[QR_CODE]":
-            # Balise générique sans URL spécifique
             pass
         else:
             clean_line = sanitize_french_text(line)
             raw.extend(clean_line.encode("ascii", errors="replace"))
             raw.extend(b"\n")
+
+    # Si aucun tag [LOGO] explicite n'était dans le texte mais que logo demandé
+    if include_logo and not logo_already_printed and "[NO_LOGO]" not in content:
+        # Inséré au début juste après marge
+        pass
 
     # 7. QR Code additionnel explicite
     if qr_data:
@@ -200,9 +238,12 @@ def format_receipt_text(
             return f"{left_str} {right_str}"
         return f"{left_str}{' ' * spaces}{right_str}"
 
-    # 1. En-tête officiel restaurant
-    name = restaurant_info.get("name", "RESTAURANT MYK").upper()
-    lines.append(center(name))
+    # 1. En-tête officiel restaurant avec logo
+    lines.append("[LOGO]")
+
+    name = restaurant_info.get("name", "SYLLA PLUS").upper()
+    if name != "SYLLA PLUS":
+        lines.append(center(name))
 
     addr = restaurant_info.get("address", "Cocody Riviera Palmeraie · Abidjan")
     if addr:

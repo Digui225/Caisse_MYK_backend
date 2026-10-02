@@ -39,7 +39,7 @@ class PrintingService:
         setting = self.db.query(EstablishmentSetting).first()
 
         restaurant_info = {
-            "name": (setting.restaurant_name if setting and setting.restaurant_name else "RESTAURANT MYK").upper(),
+            "name": (setting.restaurant_name if setting and setting.restaurant_name else "SYLLA PLUS").upper(),
             "address": setting.address if setting and setting.address else "Cocody Riviera Palmeraie · Abidjan",
             "phone": setting.phone if setting and setting.phone else "+225 07 58 00 00 00",
             "ncc": setting.ncc if setting and setting.ncc else "2104598B",
@@ -188,13 +188,23 @@ class PrintingService:
         if not app_settings.ENABLE_HARDWARE_PRINTING and not force:
             return True
 
-        # 1. Sur Linux : priorité absolue à CUPS raw (Xprinter_58) ou port USB direct
-        if shutil.which("lpr"):
+        # 1. Sur Linux : priorité absolue à CUPS lp raw (Xprinter_58) ou port USB direct
+        if shutil.which("lp"):
             for printer_target in ["Xprinter_58", None]:
-                cmd = ["lpr", "-o", "raw"] if printer_target is None else ["lpr", "-P", printer_target, "-o", "raw"]
+                cmd = ["lp", "-o", "raw"] if printer_target is None else ["lp", "-d", printer_target, "-o", "raw"]
                 try:
                     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    proc.communicate(input=raw_bytes, timeout=3.0)
+                    proc.communicate(input=raw_bytes, timeout=4.0)
+                    if proc.returncode == 0:
+                        return True
+                except Exception:
+                    pass
+        elif shutil.which("lpr"):
+            for printer_target in ["Xprinter_58", None]:
+                cmd = ["lpr", "-l"] if printer_target is None else ["lpr", "-P", printer_target, "-l"]
+                try:
+                    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    proc.communicate(input=raw_bytes, timeout=4.0)
                     if proc.returncode == 0:
                         return True
                 except Exception:
@@ -248,13 +258,13 @@ class PrintingService:
         from caisse.models.settings import EstablishmentSetting
 
         setting = self.db.query(EstablishmentSetting).first()
-        restaurant_name = (setting.restaurant_name if setting and setting.restaurant_name else "RESTAURANT MYK").upper()
+        restaurant_name = (setting.restaurant_name if setting and setting.restaurant_name else "SYLLA PLUS").upper()
         address = setting.address if setting and setting.address else "Cocody Riviera Palmeraie · Abidjan"
         phone = setting.phone if setting and setting.phone else "+225 07 58 00 00 00"
         ncc = setting.ncc if setting and setting.ncc else "2104598B"
         rccm = setting.rccm if setting and setting.rccm else "CI-ABJ-2024-B-12345"
         footer = custom_footer or (setting.receipt_footer if setting and setting.receipt_footer else "Merci de votre visite · A tres bientot !")
-        welcome = custom_header if custom_header is not None else "Bienvenue au Restaurant MYK"
+        welcome = custom_header if custom_header is not None else "Bienvenue chez Sylla Plus"
 
         restaurant_info = {
             "name": restaurant_name,
