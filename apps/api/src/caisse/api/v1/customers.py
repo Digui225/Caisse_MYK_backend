@@ -3,65 +3,54 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from caisse.database import get_db
-from caisse.deps import get_current_user, require_role
+from caisse.deps import get_current_user
 from caisse.errors import CaisseException
-from caisse.models.customer import Customer
 from caisse.models.user import User
-from caisse.repositories.customers import CustomerRepository
-from caisse.schemas.customer import CustomerCreate, CustomerResponse
+from caisse.schemas.customer import CustomerCreate, CustomerOut
+from caisse.services import customer_service
 
 router = APIRouter(prefix="/customers", tags=["Clients & FNE"])
 
 
-@router.get("", response_model=list[CustomerResponse])
+@router.get("", response_model=list[CustomerOut], summary="Rechercher des clients")
 def list_customers(
-    q: Optional[str] = Query(None, description="Recherche par nom, NCC ou téléphone"),
+    q: Optional[str] = Query(None, description="Recherche libre"),
+    search: Optional[str] = Query(None, description="Recherche libre (alias)"),
+    ncc: Optional[str] = Query(None, description="Filtrer sur un NCC exact"),
     limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(get_current_user),
 ):
-    repo = CustomerRepository(db)
-    return repo.search(query=q, limit=limit)
+    query_str = search or q
+    return customer_service.search_customers(db, query=query_str, ncc=ncc, limit=limit)
 
 
-@router.post("", response_model=CustomerResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=CustomerOut, status_code=status.HTTP_201_CREATED, summary="Créer un client d'entreprise")
 def create_customer(
     payload: CustomerCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
-    repo = CustomerRepository(db)
-    if payload.ncc:
-        existing = repo.get_by_ncc(payload.ncc)
-        if existing:
-            raise CaisseException(
-                code="CUSTOMER_NCC_EXISTS",
-                title="Client déjà existant",
-                detail=f"Un client avec le NCC {payload.ncc} existe déjà ({existing.name}).",
-                status_code=status.HTTP_409_CONFLICT,
-            )
-
-    customer = Customer(
-        name=payload.name,
+    company_name = payload.company_name or payload.name or ""
+    return customer_service.create_customer(
+        db,
+        company_name=company_name,
         ncc=payload.ncc,
+        tax_regime=payload.tax_regime,
+        address=payload.address,
         phone=payload.phone,
         email=payload.email,
-        address=payload.address,
+        actor_id=str(user.id),
     )
-    repo.add(customer)
-    db.commit()
-    db.refresh(customer)
-    return customer
 
 
-@router.get("/{customer_id}", response_model=CustomerResponse)
+@router.get("/{customer_id}", response_model=CustomerOut, summary="Détail d'un client")
 def get_customer(
     customer_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(get_current_user),
 ):
-    repo = CustomerRepository(db)
-    cust = repo.get_by_id(customer_id)
+    cust = customer_service.get_by_id(db, customer_id)
     if not cust:
         raise CaisseException(
             code="CUSTOMER_NOT_FOUND",

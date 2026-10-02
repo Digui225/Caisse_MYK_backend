@@ -95,3 +95,15 @@ def require_role(*allowed_roles: str) -> Callable[[User], User]:
         return current_user
 
     return role_dependency
+
+
+def get_fne_provider() -> Any:
+    from caisse.config import get_settings
+    from caisse.infrastructure.fne.http_client import HttpFneProvider
+    from caisse.infrastructure.fne.mock import MockFneProvider
+
+    settings = get_settings()
+    if settings.fne_provider == "api":
+        return HttpFneProvider(settings.fne_api_base_url, settings.fne_api_key)
+    return MockFneProvider()
+

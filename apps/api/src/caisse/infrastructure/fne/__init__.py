@@ -1,9 +1,4 @@
-from caisse.infrastructure.fne.mock_provider import MockFneProvider
-from caisse.infrastructure.fne.manual_provider import ManualFneProvider
-from caisse.infrastructure.fne.api_provider import ApiFneProvider
+from caisse.infrastructure.fne.http_client import HttpFneProvider, parse_result
+from caisse.infrastructure.fne.mock import MockFneProvider
 
-__all__ = [
-    "MockFneProvider",
-    "ManualFneProvider",
-    "ApiFneProvider",
-]
+__all__ = ["HttpFneProvider", "MockFneProvider", "parse_result"]

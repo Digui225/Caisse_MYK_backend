@@ -1,12 +1,105 @@
 import argparse
 import csv
+from datetime import datetime, timezone
+from decimal import Decimal
+import json
+from pathlib import Path
 import sys
+from sqlalchemy import select
+
 from caisse.database import SessionLocal
 from caisse.models.catalog import Category, Product
+from caisse.models.settings import AppSetting
 from caisse.models.table import RestaurantTable
 from caisse.services.auth_service import AuthService
 from caisse.repositories.sessions import CashSessionRepository
 from caisse.seeds.demo_data import seed_catalog_and_tables
+
+PROBE_LINES = [
+    # TTC attendu : 2 x 3 500 + 1 x 1 000 = 8 000 XOF
+    ("Poisson braisé", 2, 3500, Decimal("0"), "PROBE-01"),
+    ("Eau minérale 1,5 L", 1, 1000, Decimal("0"), "PROBE-02"),
+]
+
+
+def cmd_set_vat_rate(db, args: argparse.Namespace) -> None:
+    try:
+        rate = Decimal(args.rate).quantize(Decimal("0.01"))
+    except Exception:
+        sys.exit(f"Taux invalide : {args.rate}")
+    if not Decimal(0) <= rate < Decimal(100):
+        sys.exit("Le taux doit être compris entre 0 et 99,99.")
+    setting = db.get(AppSetting, "vat.default_rate")
+    if setting is None:
+        db.add(AppSetting(key="vat.default_rate", value=str(rate)))
+    else:
+        setting.value = str(rate)
+    changed = 0
+    if args.all_products:
+        for product in db.scalars(select(Product)):
+            product.vat_rate = float(rate)
+            changed += 1
+    db.commit()
+    print(f"✅ Taux par défaut : {rate} %. Produits modifiés : {changed}.")
+
+
+def cmd_fne_probe(args: argparse.Namespace) -> None:
+    from caisse.config import get_settings
+    from caisse.domain import fne
+    from caisse.domain.ports import FneError
+    from caisse.infrastructure.fne import HttpFneProvider
+
+    settings = get_settings()
+    if not settings.fne_api_base_url or not settings.fne_api_key:
+        sys.exit("FNE_API_BASE_URL et FNE_API_KEY doivent être définis (fichier .env).")
+    print(f"URL FNE : {settings.fne_api_base_url} — modèle {args.template}")
+    if not args.yes:
+        sys.exit("Chaque appel consomme un sticker : relancez avec --yes pour confirmer.")
+
+    out = Path(args.out) / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out.mkdir(parents=True, exist_ok=True)
+
+    def save(name: str, data: object) -> None:
+        (out / f"{name}.json").write_text(
+            json.dumps(data, default=str, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+    provider = HttpFneProvider(settings.fne_api_base_url, settings.fne_api_key)
+    lines = [
+        fne.FneLine(description=d, quantity=q, unit_price_ttc_xof=p, vat_rate=r, reference=ref)
+        for d, q, p, r, ref in PROBE_LINES
+    ]
+    expected_ttc = sum(line.quantity * line.unit_price_ttc_xof for line in lines)
+    try:
+        request = fne.build_sale_request(
+            lines=lines,
+            client=fne.FneClient(
+                company_name=args.client_name,
+                phone=args.client_phone,
+                email=args.client_email,
+                ncc=args.client_ncc,
+            ),
+            template=fne.FneTemplate(args.template),
+            payment_method="cash",
+            issuer=fne.FneIssuer(
+                point_of_sale=args.point_of_sale or settings.FNE_POINT_OF_SALE,
+                establishment=args.establishment or settings.FNE_ESTABLISHMENT,
+            ),
+            ht_decimals=args.ht_decimals,
+        )
+    except fne.FneMappingError as exc:
+        sys.exit(f"Requête invalide : {exc.detail}")
+    save("1-sign-request", request)
+    try:
+        sale = provider.sign(request, timeout=args.timeout)
+    except FneError as exc:
+        save("1-sign-error", {"type": type(exc).__name__, "status": exc.status, "body": exc.body})
+        sys.exit(f"Échec ({type(exc).__name__}) : {exc}\nDétails : {out}")
+    save("1-sign-response", sale.raw)
+    print(f"Facture certifiée : {sale.external_number}")
+    print(f"QR (token)        : {sale.qr_payload}")
+    print(f"TTC caisse / FNE  : {expected_ttc} / {sale.amount_ttc} (TVA FNE {sale.vat_amount})")
+    print(f"Stickers restants : {sale.balance_sticker} (alerte : {sale.sticker_warning})")
 
 
 def main() -> None:
@@ -31,20 +124,47 @@ def main() -> None:
 
     # Commande import-catalog
     import_parser = subparsers.add_parser("import-catalog", help="Importer le catalogue depuis un fichier CSV")
-    import_parser.add_argument("file", help="Chemin du fichier CSV (format: categorie,nom,nom_court,prix_xof,suivi_stock,groupe_fiscal)")
+    import_parser.add_argument("file", help="Chemin du fichier CSV")
 
     # Commande create-tables
     tables_parser = subparsers.add_parser("create-tables", help="Générer des tables de salle")
     tables_parser.add_argument("--count", type=int, default=15, help="Nombre de tables à générer")
     tables_parser.add_argument("--zone", default="Salle", help="Nom de la zone")
 
+    # Commande set-vat-rate
+    vat_parser = subparsers.add_parser("set-vat-rate", help="Changer le taux de TVA par défaut")
+    vat_parser.add_argument("rate", help="Taux de TVA (ex: 0 pour TEE, 18 pour taux standard)")
+    vat_parser.add_argument("--all-products", action="store_true", help="Appliquer à tous les produits existants")
+
+    # Commande fne-probe
+    probe_parser = subparsers.add_parser("fne-probe", help="Tester la connexion API FNE DGI")
+    probe_parser.add_argument("--point-of-sale", default="CAISSE-1", help="Point de vente FNE")
+    probe_parser.add_argument("--establishment", default="RESTAURANT CHEZ SYLLA PLUS", help="Nom établissement")
+    probe_parser.add_argument("--template", choices=["B2C", "B2B"], default="B2C", help="Modèle fiscal")
+    probe_parser.add_argument("--client-name", default="CLIENT DIVERS", help="Nom client")
+    probe_parser.add_argument("--client-phone", default="0748735573", help="Téléphone client")
+    probe_parser.add_argument("--client-email", default="restaurantmykpro@gmail.com", help="Email client")
+    probe_parser.add_argument("--client-ncc", default=None, help="NCC client (en B2B)")
+    probe_parser.add_argument("--ht-decimals", type=int, default=4, help="Décimales HT")
+    probe_parser.add_argument("--timeout", type=float, default=5.0, help="Timeout en secondes")
+    probe_parser.add_argument("--out", default="fne-probe", help="Répertoire de sortie")
+    probe_parser.add_argument("--yes", action="store_true", help="Confirmer la consommation de sticker")
+
     args = parser.parse_args()
+
+    if args.command == "fne-probe":
+        cmd_fne_probe(args)
+        return
+
     db = SessionLocal()
     auth_service = AuthService(db)
     session_repo = CashSessionRepository(db)
 
     try:
-        if args.command == "create-user":
+        if args.command == "set-vat-rate":
+            cmd_set_vat_rate(db, args)
+
+        elif args.command == "create-user":
             if args.noinput or (args.name and args.role and args.pin):
                 name = args.name or sys.stdin.readline().strip()
                 role = args.role or "CAISSIER"

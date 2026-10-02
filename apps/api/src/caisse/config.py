@@ -28,7 +28,29 @@ class Settings(BaseSettings):
     PRINT_AGENT_URL: str = "http://host.docker.internal:8090"
     ENABLE_HARDWARE_PRINTING: bool = False
     FNE_PROVIDER: Literal["manual", "api", "mock"] = "manual"
+    FNE_SYNC_TIMEOUT_SECONDS: float = 4.0
+    FNE_API_BASE_URL: str = "http://54.247.95.108/ws"
+    FNE_API_KEY: str = ""
+    FNE_POINT_OF_SALE: str = "CAISSE-1"
+    FNE_ESTABLISHMENT: str = "RESTAURANT CHEZ SYLLA PLUS"
     BACKUP_DIR: str = "/var/backups/caisse"
+
+    @property
+    def fne_provider(self) -> str:
+        return self.FNE_PROVIDER
+
+    @property
+    def fne_sync_timeout_seconds(self) -> float:
+        return self.FNE_SYNC_TIMEOUT_SECONDS
+
+    @property
+    def fne_api_base_url(self) -> str:
+        return self.FNE_API_BASE_URL
+
+    @property
+    def fne_api_key(self) -> str:
+        return self.FNE_API_KEY
+
 
     model_config = SettingsConfigDict(
         env_file=".env",

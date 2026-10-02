@@ -1,4 +1,4 @@
-from sqlalchemy import Float, Integer, String
+from sqlalchemy import Column, DateTime, Float, Integer, JSON, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 from caisse.database import Base
 from caisse.models.base import TimestampMixin, generate_uuid
@@ -17,3 +17,15 @@ class EstablishmentSetting(Base, TimestampMixin):
     receipt_footer: Mapped[str] = mapped_column(String(255), default="Merci de votre visite et à très bientôt !", nullable=False)
     print_width: Mapped[int] = mapped_column(Integer, default=48, nullable=False)
     screen_lock_timeout_seconds: Mapped[int] = mapped_column(Integer, default=120, nullable=False)
+
+
+class AppSetting(Base):
+    """Paramètres métier clé-valeur (mentions du ticket, TVA, seuils FNE…)."""
+
+    __tablename__ = "settings"
+
+    key = Column(String(64), primary_key=True)
+    value = Column(JSON, nullable=True)
+    updated_by = Column(String(36), nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+

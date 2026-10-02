@@ -46,17 +46,20 @@ class StockMovementType(StrEnum):
 
 class FneDocumentType(StrEnum):
     FNE = "FNE"
+    REFUND = "REFUND"
     RNE = "RNE"
     DAILY_SUMMARY = "DAILY_SUMMARY"
 
 
 class FneStatus(StrEnum):
     DRAFT = "DRAFT"
+    PENDING = "PENDING"
     QUEUED = "QUEUED"
     SUBMITTING = "SUBMITTING"
     CERTIFIED = "CERTIFIED"
     FAILED = "FAILED"
     MANUAL = "MANUAL"
+
 
 
 class PrintJobType(StrEnum):

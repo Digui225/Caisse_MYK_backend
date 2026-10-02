@@ -24,3 +24,10 @@ class HealthReadyResponse(BaseSchema):
     database: bool = True
     print_agent: bool = True
     fne_queue_length: int = 0
+
+
+class ApiWarning(BaseSchema):
+    code: str
+    detail: str | None = None
+    meta: dict[str, Any] = {}
+

@@ -22,6 +22,74 @@ class CaisseException(Exception):
         super().__init__(detail)
 
 
+# Exceptions métier FNE & Clients
+class CustomerNccExistsError(CaisseException):
+    def __init__(self, detail: str = "NCC déjà enregistré", meta: dict[str, Any] | None = None):
+        super().__init__(
+            code="CUSTOMER_NCC_EXISTS",
+            title="NCC déjà enregistré",
+            detail=detail,
+            status_code=status.HTTP_409_CONFLICT,
+            meta=meta or {},
+        )
+
+
+class FneOrderNotPaidError(CaisseException):
+    def __init__(self, detail: str = "Commande non soldée", meta: dict[str, Any] | None = None):
+        super().__init__(
+            code="FNE_ORDER_NOT_PAID",
+            title="Commande non soldée",
+            detail=detail,
+            status_code=status.HTTP_409_CONFLICT,
+            meta=meta or {},
+        )
+
+
+class FneNotConfiguredError(CaisseException):
+    def __init__(self, detail: str = "Point de vente ou établissement FNE non paramétré", meta: dict[str, Any] | None = None):
+        super().__init__(
+            code="FNE_NOT_CONFIGURED",
+            title="FNE non configurée",
+            detail=detail,
+            status_code=status.HTTP_409_CONFLICT,
+            meta=meta or {},
+        )
+
+
+class FneDocumentStateError(CaisseException):
+    def __init__(self, detail: str = "Document FNE dans un état qui interdit cette action", meta: dict[str, Any] | None = None):
+        super().__init__(
+            code="FNE_DOCUMENT_STATE",
+            title="État du document incompatible",
+            detail=detail,
+            status_code=status.HTTP_409_CONFLICT,
+            meta=meta or {},
+        )
+
+
+class FneRefundExceedsError(CaisseException):
+    def __init__(self, detail: str = "Quantité d'avoir supérieure à la quantité certifiée", meta: dict[str, Any] | None = None):
+        super().__init__(
+            code="FNE_REFUND_EXCEEDS",
+            title="Quantité d'avoir excessive",
+            detail=detail,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            meta=meta or {},
+        )
+
+
+class FneInvalidDataError(CaisseException):
+    def __init__(self, code: str, detail: str, meta: dict[str, Any] | None = None):
+        super().__init__(
+            code=code,
+            title="Données insuffisantes pour la FNE",
+            detail=detail,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            meta=meta or {},
+        )
+
+
+
 def problem_json_response(
     status_code: int,
     code: str,

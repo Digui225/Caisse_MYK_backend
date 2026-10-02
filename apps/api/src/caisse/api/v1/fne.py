@@ -1,104 +1,275 @@
-from datetime import datetime
-from typing import Optional
-from fastapi import APIRouter, Depends, Query, Response, status
+from datetime import date, datetime, timezone
+from typing import Annotated, Any, Optional
+from fastapi import APIRouter, Depends, Path, Query, Response, status
 from sqlalchemy.orm import Session
 
 from caisse.database import get_db
-from caisse.deps import get_current_user, require_role
-from caisse.errors import CaisseException
+from caisse.deps import get_current_user, get_fne_provider, require_role
+from caisse.domain.enums import FneStatus
+from caisse.models.fne import FneDocument
 from caisse.models.user import User
-from caisse.repositories.fne import FneRepository
-from caisse.schemas.fne import FneDocumentResponse, FneGenerateRequest
-from caisse.services.fne_service import FneService
+from caisse.repositories import fne as fne_repo
+from caisse.schemas.common import PaginatedResponse
+from caisse.schemas.fne import (
+    FneDailySummaryOut,
+    FneDocumentOut,
+    FneDocumentResponse,
+    FneDocumentResult,
+    FneGenerateRequest,
+    FneIssueIn,
+    FnePendingCountOut,
+    FneRefundIn,
+    FneResolveIn,
+)
+from caisse.services import fne_service
 
-router = APIRouter(prefix="/fne", tags=["Facturation Normalisée (FNE)"])
+router = APIRouter(tags=["FNE"])
 
 
-@router.post("/generate", response_model=FneDocumentResponse, status_code=status.HTTP_201_CREATED)
-async def generate_fne_for_order(
-    payload: FneGenerateRequest,
+@router.post(
+    "/orders/{order_id}/fne",
+    response_model=FneDocumentResult,
+    status_code=status.HTTP_201_CREATED,
+    summary="Émettre la FNE d'une commande soldée",
+)
+def issue(
+    order_id: str,
+    body: FneIssueIn,
+    response: Response,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role("CAISSIER", "RESPONSABLE", "ADMIN")),
-):
-    """Génère à la demande une Facture Normalisée Électronique (FNE) pour une commande soldée."""
-    service = FneService(db)
-    doc = await service.create_and_submit_fne_for_order(
-        order_id=payload.order_id,
-        customer_id=payload.customer_id,
+    user: User = Depends(get_current_user),
+    provider: Any = Depends(get_fne_provider),
+) -> FneDocumentResult:
+    """FNE à la demande (DGI CI)."""
+    doc, submitted = fne_service.issue_for_order(
+        db,
+        order_id,
+        template=body.template,
+        customer_id=body.customer_id,
+        payment_method=body.payment_method,
+        provider=provider,
+        user=user,
     )
-    db.commit()
-    db.refresh(doc)
-    return doc
+    if not submitted:
+        response.status_code = status.HTTP_200_OK
+    return FneDocumentResult(
+        document=fne_service.to_out(db, doc), warnings=fne_service.warnings_for(db, doc)
+    )
 
 
-@router.get("/documents", response_model=list[FneDocumentResponse])
-def list_fne_documents(
-    status: Optional[str] = Query(None, description="Filtrer par statut (QUEUED, CERTIFIED, FAILED, MANUAL_EXPORTED)"),
+@router.get("/orders/{order_id}/fne", response_model=FneDocumentOut, summary="FNE d'une commande")
+def get_for_order(
+    order_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> FneDocumentOut:
+    """FNE de vente de la commande."""
+    return fne_service.to_out(db, fne_service.get_for_order(db, order_id))
+
+
+@router.get("/fne/documents", response_model=list[FneDocumentOut], summary="Documents FNE (suivi)")
+def list_documents(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role("RESPONSABLE", "ADMIN")),
+    status: Optional[str] = Query(None, description="Filtrer sur un statut"),
     start_date: Optional[datetime] = Query(None, description="Date début"),
-    end_date: Optional[datetime] = Query(None, description="Date fin"),
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    limit: int = Query(200, ge=1, le=500),
+) -> list[FneDocumentOut]:
+    """Liste des documents FNE."""
+    docs = fne_repo.list_documents(db, status=status, start_date=start_date, limit=limit)
+    return fne_service.to_out_many(db, docs)
+
+
+
+@router.post(
+    "/fne/documents/{document_id}/retry",
+    response_model=FneDocumentResult,
+    summary="Renvoyer un document FNE",
+)
+def retry(
+    document_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    repo = FneRepository(db)
-    return repo.list_documents(
-        status=status,
-        start_date=start_date,
-        end_date=end_date,
-        limit=limit,
-        offset=offset,
+    user: User = Depends(require_role("RESPONSABLE", "ADMIN")),
+    provider: Any = Depends(get_fne_provider),
+) -> FneDocumentResult:
+    """Renvoie un document en QUEUED ou FAILED."""
+    doc = fne_service.retry(db, document_id, provider=provider, user=user)
+    return FneDocumentResult(
+        document=fne_service.to_out(db, doc), warnings=fne_service.warnings_for(db, doc)
     )
 
 
-@router.get("/documents/{document_id}", response_model=FneDocumentResponse)
-def get_fne_document(
+@router.post(
+    "/fne/documents/{document_id}/resolve",
+    response_model=FneDocumentResult,
+    summary="Trancher un document FNE incertain",
+)
+def resolve(
+    document_id: str,
+    body: FneResolveIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("RESPONSABLE", "ADMIN")),
+    provider: Any = Depends(get_fne_provider),
+) -> FneDocumentResult:
+    """Tranche un cas incertain après vérification dans l'espace FNE."""
+    doc = fne_service.resolve(
+        db,
+        document_id,
+        is_certified=body.is_certified,
+        external_number=body.external_number,
+        qr_payload=body.qr_payload,
+        provider=provider,
+        user=user,
+    )
+    return FneDocumentResult(
+        document=fne_service.to_out(db, doc), warnings=fne_service.warnings_for(db, doc)
+    )
+
+
+@router.post(
+    "/fne/documents/{document_id}/refund",
+    response_model=FneDocumentResult,
+    status_code=status.HTTP_201_CREATED,
+    summary="Émettre un avoir FNE",
+)
+def refund(
+    document_id: str,
+    body: FneRefundIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("RESPONSABLE", "ADMIN")),
+    provider: Any = Depends(get_fne_provider),
+) -> FneDocumentResult:
+    """Avoir total ou partiel sur une FNE certifiée."""
+    doc = fne_service.refund(
+        db,
+        document_id,
+        lines=[(line.order_item_id, line.quantity) for line in body.items],
+        provider=provider,
+        user=user,
+    )
+    return FneDocumentResult(
+        document=fne_service.to_out(db, doc), warnings=fne_service.warnings_for(db, doc)
+    )
+
+
+@router.get(
+    "/fne/documents/{document_id}/duplicate",
+    response_model=FneDocumentOut,
+    summary="Duplicata d'une FNE certifiée",
+)
+def duplicate(
     document_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    repo = FneRepository(db)
-    doc = repo.get_by_id(document_id)
-    if not doc:
-        raise CaisseException(
-            code="FNE_DOCUMENT_NOT_FOUND",
-            title="Document FNE introuvable",
-            detail=f"Aucun document FNE avec l'ID {document_id}.",
-            status_code=status.HTTP_404_NOT_FOUND,
-        )
-    return doc
+    _: User = Depends(get_current_user),
+) -> FneDocumentOut:
+    """Duplicata d'une facture certifiée."""
+    return fne_service.to_out(db, fne_service.get_duplicate(db, document_id))
 
 
-@router.post("/documents/{document_id}/retry", response_model=FneDocumentResponse)
-async def retry_fne_document(
-    document_id: str,
+@router.get(
+    "/fne/pending-count",
+    response_model=FnePendingCountOut,
+    summary="Compteur de la barre d'état",
+)
+def pending_count(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    service = FneService(db)
-    doc = await service.retry_document(document_id)
-    db.commit()
-    db.refresh(doc)
-    return doc
+    _: User = Depends(get_current_user),
+) -> FnePendingCountOut:
+    """Nombre de documents en attente d'une action."""
+    pending, uncertain, failed = fne_repo.pending_counts(db)
+    return FnePendingCountOut(pending=pending, uncertain=uncertain, failed=failed)
 
 
-@router.get("/export")
+@router.get(
+    "/fne/daily-summary",
+    response_model=FneDailySummaryOut,
+    summary="Récapitulatif fiscal d'une journée",
+)
+def daily_summary(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role("RESPONSABLE", "ADMIN")),
+    business_date: Optional[date] = Query(None, description="Journée comptable"),
+) -> FneDailySummaryOut:
+    """Récapitulatif fiscal journalier."""
+    if business_date is None:
+        business_date = datetime.now(timezone.utc).date()
+    return fne_service.daily_summary(db, business_date)
+
+
+# Rétro-compatibilité pour l'ancien endpoint POST /api/v1/fne/generate
+@router.post(
+    "/fne/generate",
+    status_code=status.HTTP_201_CREATED,
+    deprecated=True,
+    summary="Alias rétro-compatible pour émettre une FNE",
+)
+def legacy_generate(
+    payload: FneGenerateRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    provider: Any = Depends(get_fne_provider),
+) -> dict[str, Any]:
+    from caisse.domain.fne import FneTemplate
+
+    template = FneTemplate.B2B if payload.customer_id else FneTemplate.B2C
+    doc, submitted = fne_service.issue_for_order(
+        db,
+        payload.order_id,
+        template=template,
+        customer_id=payload.customer_id,
+        provider=provider,
+        user=user,
+    )
+    buyer_ncc = ""
+    if doc.customer:
+        buyer_ncc = doc.customer.ncc or ""
+    return {
+        "id": str(doc.id),
+        "order_id": str(doc.order_id),
+        "customer_id": str(doc.customer_id) if doc.customer_id else None,
+        "document_type": str(doc.type),
+        "status": str(doc.status),
+        "invoice_number": doc.external_number,
+        "qr_url": doc.qr_payload,
+        "fne_token": doc.qr_payload,
+        "payload": {
+            "buyer": {"ncc": buyer_ncc},
+            "totals": {"total_ttc_xof": doc.fne_amount_ttc_xof or (doc.order.total_ttc_xof if doc.order else 0)},
+            "raw": doc.payload,
+        },
+        "response_payload": doc.raw_response,
+        "error_message": doc.last_error,
+        "retry_count": doc.attempts,
+        "submitted_at": doc.created_at,
+        "certified_at": doc.certified_at,
+        "created_at": doc.created_at,
+        "updated_at": doc.created_at,
+        "document": fne_service.to_out(db, doc),
+        "warnings": fne_service.warnings_for(db, doc),
+    }
+
+
+
+
+@router.get("/fne/export", summary="Exporter les documents FNE en CSV")
 def export_fne_csv(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role("RESPONSABLE", "ADMIN")),
     status: Optional[str] = Query(None, description="Filtrer par statut"),
     start_date: Optional[datetime] = Query(None, description="Date début"),
-    end_date: Optional[datetime] = Query(None, description="Date fin"),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    service = FneService(db)
-    csv_content = service.export_documents_csv(
-        status=status,
-        start_date=start_date,
-        end_date=end_date,
-    )
+    docs = fne_repo.list_documents(db, status=status, start_date=start_date, limit=1000)
+    lines = ["ID,Numero_Facture,Client,Type,Statut,Montant_TTC,Date_Creation"]
+    for d in docs:
+        client_name = d.customer.name if d.customer else ""
+        lines.append(f"{d.id},{d.external_number or ''},{client_name},{d.type},{d.status},{d.fne_amount_ttc_xof or ''},{d.created_at}")
+    csv_content = "\n".join(lines)
+
     filename = f"fne_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
     return Response(
         content=csv_content,
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
