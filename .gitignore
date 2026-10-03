@@ -1,0 +1,39 @@
+# Environnement et secrets
+.env
+.env.*
+!.env.example
+
+# Python & caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Environnements virtuels
+.venv/
+venv/
+ENV/
+
+# Tests & couverture
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Bases de données locales & fichiers temporaires
+*.db
+*.sqlite3
+caisse_dev.db
+caisse_test.db
+fne-probe/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# Documentation racine & exploitation
+/*.md
+docs/*.md

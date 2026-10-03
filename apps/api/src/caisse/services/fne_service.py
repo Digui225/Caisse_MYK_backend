@@ -233,9 +233,9 @@ def issue_for_order(
         )
         db.add(doc)
     try:
-        db.flush()
+        with db.begin_nested():
+            db.flush()
     except IntegrityError:
-        db.rollback()
         winner = fne_repo.sale_for_order(db, str(order_id))
         if winner is None:
             raise

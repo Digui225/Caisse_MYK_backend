@@ -16,7 +16,7 @@ router = APIRouter(prefix="/orders", tags=["Encaissement & Paiements"])
     status_code=status.HTTP_201_CREATED,
     summary="Encaisser un paiement (idempotent)",
 )
-async def process_payment(
+def process_payment(
     id: str,
     payload: PaymentRequest,
     current_user: User = Depends(require_role("CAISSIER", "RESPONSABLE", "ADMIN")),
@@ -25,7 +25,7 @@ async def process_payment(
     db: Session = Depends(get_db),
 ) -> OrderPaymentResult:
     service = PaymentService(db)
-    return await service.process_payment(
+    return service.process_payment(
         order_id=id,
         payload=payload,
         user_id=current_user.id,
@@ -39,7 +39,7 @@ async def process_payment(
     response_model=list[PaymentResponse],
     summary="Lister les règlements d'une commande",
 )
-async def list_order_payments(
+def list_order_payments(
     id: str,
     current_user: User = Depends(require_role("CAISSIER", "RESPONSABLE", "ADMIN")),
     db: Session = Depends(get_db),

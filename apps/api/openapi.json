@@ -2,14 +2,14 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Caisse MYK API",
-    "description": "API Backend de Caisse Restaurant (Caisse MYK) - Point de Vente & Facturation Normalisée",
+    "description": "API Backend de Caisse Restaurant (Caisse MYK) - Point de Vente & Facturation Normalis\u00e9e",
     "version": "1.0.0"
   },
   "paths": {
     "/health": {
       "get": {
         "tags": [
-          "Système"
+          "Syst\u00e8me"
         ],
         "summary": "Health Check",
         "operationId": "health_check_health_get",
@@ -30,7 +30,7 @@
     "/health/ready": {
       "get": {
         "tags": [
-          "Système"
+          "Syst\u00e8me"
         ],
         "summary": "Health Ready",
         "operationId": "health_ready_health_ready_get",
@@ -135,7 +135,7 @@
         "tags": [
           "Authentification"
         ],
-        "summary": "Déconnexion",
+        "summary": "D\u00e9connexion",
         "operationId": "logout_api_v1_auth_logout_post",
         "responses": {
           "200": {
@@ -165,7 +165,7 @@
         "tags": [
           "Authentification"
         ],
-        "summary": "Utilisateur connecté",
+        "summary": "Utilisateur connect\u00e9",
         "operationId": "get_current_user_info_api_v1_auth_me_get",
         "responses": {
           "200": {
@@ -255,7 +255,7 @@
         "tags": [
           "Utilisateurs"
         ],
-        "summary": "Lister les utilisateurs (Admin)",
+        "summary": "Lister les utilisateurs (Admin/Responsable)",
         "operationId": "list_users_api_v1_users_get",
         "responses": {
           "200": {
@@ -268,6 +268,173 @@
               }
             }
           }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Utilisateurs"
+        ],
+        "summary": "Cr\u00e9er un utilisateur (Admin)",
+        "operationId": "create_user_api_v1_users_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/users/{user_id}": {
+      "patch": {
+        "tags": [
+          "Utilisateurs"
+        ],
+        "summary": "Modifier un utilisateur (Admin)",
+        "operationId": "update_user_api_v1_users__user_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}/pin": {
+      "post": {
+        "tags": [
+          "Utilisateurs"
+        ],
+        "summary": "R\u00e9initialiser le code PIN (Admin)",
+        "operationId": "reset_user_pin_api_v1_users__user_id__pin_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPinRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Reset User Pin Api V1 Users  User Id  Pin Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -276,7 +443,7 @@
         "tags": [
           "Catalogue"
         ],
-        "summary": "Lister les catégories actives",
+        "summary": "Lister les cat\u00e9gories actives",
         "operationId": "list_categories_api_v1_catalog_categories_get",
         "security": [
           {
@@ -304,7 +471,7 @@
         "tags": [
           "Catalogue"
         ],
-        "summary": "Créer une catégorie (Responsable/Admin)",
+        "summary": "Cr\u00e9er une cat\u00e9gorie (Responsable/Admin)",
         "operationId": "create_category_api_v1_catalog_categories_post",
         "security": [
           {
@@ -424,7 +591,7 @@
         "tags": [
           "Catalogue"
         ],
-        "summary": "Créer un produit (Responsable/Admin)",
+        "summary": "Cr\u00e9er un produit (Responsable/Admin)",
         "operationId": "create_product_api_v1_catalog_products_post",
         "security": [
           {
@@ -488,7 +655,7 @@
         "tags": [
           "Catalogue"
         ],
-        "summary": "Modifier le prix d'un produit (tracé, Responsable/Admin)",
+        "summary": "Modifier le prix d'un produit (trac\u00e9, Responsable/Admin)",
         "operationId": "update_product_price_api_v1_catalog_products__id__price_patch",
         "security": [
           {
@@ -561,29 +728,203 @@
         "tags": [
           "Tables & Salle"
         ],
-        "summary": "Lister les tables configurées",
+        "summary": "Lister les tables configur\u00e9es",
         "operationId": "list_tables_api_v1_tables_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "include_inactive",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Inclure les tables d\u00e9sactiv\u00e9es",
+              "default": false,
+              "title": "Include Inactive"
+            },
+            "description": "Inclure les tables d\u00e9sactiv\u00e9es"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/TableResponse"
                   },
-                  "type": "array",
                   "title": "Response List Tables Api V1 Tables Get"
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
-        },
+        }
+      },
+      "post": {
+        "tags": [
+          "Tables & Salle"
+        ],
+        "summary": "Cr\u00e9er une table (Admin/Responsable)",
+        "operationId": "create_table_api_v1_tables_post",
         "security": [
           {
             "HTTPBearer": []
           }
-        ]
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTableRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TableResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tables/{table_id}": {
+      "patch": {
+        "tags": [
+          "Tables & Salle"
+        ],
+        "summary": "Modifier une table (Admin/Responsable)",
+        "operationId": "update_table_api_v1_tables__table_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "table_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Table Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTableRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TableResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Tables & Salle"
+        ],
+        "summary": "D\u00e9sactiver ou supprimer une table (Admin/Responsable)",
+        "operationId": "delete_table_api_v1_tables__table_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "table_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Table Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Delete Table Api V1 Tables  Table Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/tables/board": {
@@ -591,7 +932,7 @@
         "tags": [
           "Tables & Salle"
         ],
-        "summary": "Vue agrégée temps réel de la salle",
+        "summary": "Vue agr\u00e9g\u00e9e temps r\u00e9el de la salle",
         "operationId": "get_table_board_api_v1_tables_board_get",
         "responses": {
           "200": {
@@ -617,7 +958,7 @@
         "tags": [
           "Commandes"
         ],
-        "summary": "Créer une commande",
+        "summary": "Cr\u00e9er une commande",
         "operationId": "create_order_api_v1_orders_post",
         "security": [
           {
@@ -763,7 +1104,7 @@
         "tags": [
           "Commandes"
         ],
-        "summary": "Détail d'une commande",
+        "summary": "D\u00e9tail d'une commande",
         "operationId": "get_order_api_v1_orders__id__get",
         "security": [
           {
@@ -883,7 +1224,7 @@
         "tags": [
           "Commandes"
         ],
-        "summary": "Retirer une ligne (tracé)",
+        "summary": "Retirer une ligne (trac\u00e9)",
         "operationId": "remove_order_item_api_v1_orders__id__items__item_id__delete",
         "security": [
           {
@@ -965,7 +1306,7 @@
         "tags": [
           "Commandes"
         ],
-        "summary": "Annuler une commande (tracé)",
+        "summary": "Annuler une commande (trac\u00e9)",
         "operationId": "cancel_order_api_v1_orders__id__cancel_post",
         "security": [
           {
@@ -1125,7 +1466,7 @@
         "tags": [
           "Encaissement & Paiements"
         ],
-        "summary": "Lister les règlements d'une commande",
+        "summary": "Lister les r\u00e8glements d'une commande",
         "operationId": "list_order_payments_api_v1_orders__id__payments_get",
         "security": [
           {
@@ -1282,7 +1623,7 @@
         "tags": [
           "Sessions de caisse"
         ],
-        "summary": "Consulter le Rapport X (intermédiaire)",
+        "summary": "Consulter le Rapport X (interm\u00e9diaire)",
         "operationId": "get_x_report_api_v1_cash_sessions__id__x_report_get",
         "security": [
           {
@@ -1329,7 +1670,7 @@
         "tags": [
           "Sessions de caisse"
         ],
-        "summary": "Clôturer la session et générer le Rapport Z",
+        "summary": "Cl\u00f4turer la session et g\u00e9n\u00e9rer le Rapport Z",
         "operationId": "close_session_api_v1_cash_sessions__id__close_post",
         "security": [
           {
@@ -1418,7 +1759,7 @@
         "tags": [
           "Sessions de caisse"
         ],
-        "summary": "Consulter le Rapport Z définitif figé",
+        "summary": "Consulter le Rapport Z d\u00e9finitif fig\u00e9",
         "operationId": "get_z_report_api_v1_cash_sessions__id__z_report_get",
         "security": [
           {
@@ -1465,7 +1806,7 @@
         "tags": [
           "Sessions de caisse"
         ],
-        "summary": "Entrée / Sortie de tiroir",
+        "summary": "Entr\u00e9e / Sortie de tiroir",
         "operationId": "create_cash_movement_api_v1_cash_sessions__id__movements_post",
         "security": [
           {
@@ -1538,7 +1879,7 @@
         "tags": [
           "Gestion des Stocks"
         ],
-        "summary": "Lister l'état des stocks",
+        "summary": "Lister l'\u00e9tat des stocks",
         "operationId": "list_stock_api_v1_stock_get",
         "responses": {
           "200": {
@@ -1634,7 +1975,7 @@
         "tags": [
           "Gestion des Stocks"
         ],
-        "summary": "Enregistrer une entrée/sortie/ajustement de stock",
+        "summary": "Enregistrer une entr\u00e9e/sortie/ajustement de stock",
         "operationId": "create_stock_movement_api_v1_stock_movements_post",
         "security": [
           {
@@ -1783,10 +2124,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Date d'exploitation (YYYY-MM-DD), défaut aujourd'hui",
+              "description": "Date d'exploitation (YYYY-MM-DD), d\u00e9faut aujourd'hui",
               "title": "Date"
             },
-            "description": "Date d'exploitation (YYYY-MM-DD), défaut aujourd'hui"
+            "description": "Date d'exploitation (YYYY-MM-DD), d\u00e9faut aujourd'hui"
           }
         ],
         "responses": {
@@ -1818,7 +2159,7 @@
         "tags": [
           "Clients & FNE"
         ],
-        "summary": "List Customers",
+        "summary": "Rechercher des clients",
         "operationId": "list_customers_api_v1_customers_get",
         "security": [
           {
@@ -1839,10 +2180,46 @@
                   "type": "null"
                 }
               ],
-              "description": "Recherche par nom, NCC ou téléphone",
+              "description": "Recherche libre",
               "title": "Q"
             },
-            "description": "Recherche par nom, NCC ou téléphone"
+            "description": "Recherche libre"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Recherche libre (alias)",
+              "title": "Search"
+            },
+            "description": "Recherche libre (alias)"
+          },
+          {
+            "name": "ncc",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filtrer sur un NCC exact",
+              "title": "Ncc"
+            },
+            "description": "Filtrer sur un NCC exact"
           },
           {
             "name": "limit",
@@ -1865,7 +2242,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/CustomerResponse"
+                    "$ref": "#/components/schemas/CustomerOut"
                   },
                   "title": "Response List Customers Api V1 Customers Get"
                 }
@@ -1888,7 +2265,7 @@
         "tags": [
           "Clients & FNE"
         ],
-        "summary": "Create Customer",
+        "summary": "Cr\u00e9er un client d'entreprise",
         "operationId": "create_customer_api_v1_customers_post",
         "security": [
           {
@@ -1911,7 +2288,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CustomerResponse"
+                  "$ref": "#/components/schemas/CustomerOut"
                 }
               }
             }
@@ -1934,7 +2311,7 @@
         "tags": [
           "Clients & FNE"
         ],
-        "summary": "Get Customer",
+        "summary": "D\u00e9tail d'un client",
         "operationId": "get_customer_api_v1_customers__customer_id__get",
         "security": [
           {
@@ -1958,7 +2335,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CustomerResponse"
+                  "$ref": "#/components/schemas/CustomerOut"
                 }
               }
             }
@@ -1976,23 +2353,39 @@
         }
       }
     },
-    "/api/v1/fne/generate": {
+    "/api/v1/orders/{order_id}/fne": {
       "post": {
         "tags": [
-          "Facturation Normalisée (FNE)"
+          "FNE"
         ],
-        "summary": "Generate Fne For Order",
-        "description": "Génère à la demande une Facture Normalisée Électronique (FNE) pour une commande soldée.",
-        "operationId": "generate_fne_for_order_api_v1_fne_generate_post",
+        "summary": "\u00c9mettre la FNE d'une commande sold\u00e9e",
+        "description": "FNE \u00e0 la demande (DGI CI).",
+        "operationId": "issue_api_v1_orders__order_id__fne_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Order Id"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FneGenerateRequest"
+                "$ref": "#/components/schemas/FneIssueIn"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -2000,7 +2393,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FneDocumentResponse"
+                  "$ref": "#/components/schemas/FneDocumentResult"
                 }
               }
             }
@@ -2015,21 +2408,63 @@
               }
             }
           }
-        },
+        }
+      },
+      "get": {
+        "tags": [
+          "FNE"
+        ],
+        "summary": "FNE d'une commande",
+        "description": "FNE de vente de la commande.",
+        "operationId": "get_for_order_api_v1_orders__order_id__fne_get",
         "security": [
           {
             "HTTPBearer": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Order Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FneDocumentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/fne/documents": {
       "get": {
         "tags": [
-          "Facturation Normalisée (FNE)"
+          "FNE"
         ],
-        "summary": "List Fne Documents",
-        "operationId": "list_fne_documents_api_v1_fne_documents_get",
+        "summary": "Documents FNE (suivi)",
+        "description": "Liste des documents FNE.",
+        "operationId": "list_documents_api_v1_fne_documents_get",
         "security": [
           {
             "HTTPBearer": []
@@ -2049,10 +2484,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Filtrer par statut (QUEUED, CERTIFIED, FAILED, MANUAL_EXPORTED)",
+              "description": "Filtrer sur un statut",
               "title": "Status"
             },
-            "description": "Filtrer par statut (QUEUED, CERTIFIED, FAILED, MANUAL_EXPORTED)"
+            "description": "Filtrer sur un statut"
           },
           {
             "name": "start_date",
@@ -2068,29 +2503,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Date début",
+              "description": "Date d\u00e9but",
               "title": "Start Date"
             },
-            "description": "Date début"
-          },
-          {
-            "name": "end_date",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Date fin",
-              "title": "End Date"
-            },
-            "description": "Date fin"
+            "description": "Date d\u00e9but"
           },
           {
             "name": "limit",
@@ -2098,21 +2514,10 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "maximum": 100,
+              "maximum": 500,
               "minimum": 1,
-              "default": 50,
+              "default": 200,
               "title": "Limit"
-            }
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 0,
-              "title": "Offset"
             }
           }
         ],
@@ -2124,56 +2529,9 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/FneDocumentResponse"
+                    "$ref": "#/components/schemas/FneDocumentOut"
                   },
-                  "title": "Response List Fne Documents Api V1 Fne Documents Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/fne/documents/{document_id}": {
-      "get": {
-        "tags": [
-          "Facturation Normalisée (FNE)"
-        ],
-        "summary": "Get Fne Document",
-        "operationId": "get_fne_document_api_v1_fne_documents__document_id__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "document_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Document Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FneDocumentResponse"
+                  "title": "Response List Documents Api V1 Fne Documents Get"
                 }
               }
             }
@@ -2194,10 +2552,11 @@
     "/api/v1/fne/documents/{document_id}/retry": {
       "post": {
         "tags": [
-          "Facturation Normalisée (FNE)"
+          "FNE"
         ],
-        "summary": "Retry Fne Document",
-        "operationId": "retry_fne_document_api_v1_fne_documents__document_id__retry_post",
+        "summary": "Renvoyer un document FNE",
+        "description": "Renvoie un document en QUEUED ou FAILED.",
+        "operationId": "retry_api_v1_fne_documents__document_id__retry_post",
         "security": [
           {
             "HTTPBearer": []
@@ -2220,7 +2579,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FneDocumentResponse"
+                  "$ref": "#/components/schemas/FneDocumentResult"
                 }
               }
             }
@@ -2238,12 +2597,310 @@
         }
       }
     },
+    "/api/v1/fne/documents/{document_id}/resolve": {
+      "post": {
+        "tags": [
+          "FNE"
+        ],
+        "summary": "Trancher un document FNE incertain",
+        "description": "Tranche un cas incertain apr\u00e8s v\u00e9rification dans l'espace FNE.",
+        "operationId": "resolve_api_v1_fne_documents__document_id__resolve_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FneResolveIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FneDocumentResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fne/documents/{document_id}/refund": {
+      "post": {
+        "tags": [
+          "FNE"
+        ],
+        "summary": "\u00c9mettre un avoir FNE",
+        "description": "Avoir total ou partiel sur une FNE certifi\u00e9e.",
+        "operationId": "refund_api_v1_fne_documents__document_id__refund_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FneRefundIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FneDocumentResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fne/documents/{document_id}/duplicate": {
+      "get": {
+        "tags": [
+          "FNE"
+        ],
+        "summary": "Duplicata d'une FNE certifi\u00e9e",
+        "description": "Duplicata d'une facture certifi\u00e9e.",
+        "operationId": "duplicate_api_v1_fne_documents__document_id__duplicate_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FneDocumentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fne/pending-count": {
+      "get": {
+        "tags": [
+          "FNE"
+        ],
+        "summary": "Compteur de la barre d'\u00e9tat",
+        "description": "Nombre de documents en attente d'une action.",
+        "operationId": "pending_count_api_v1_fne_pending_count_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FnePendingCountOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/fne/daily-summary": {
+      "get": {
+        "tags": [
+          "FNE"
+        ],
+        "summary": "R\u00e9capitulatif fiscal d'une journ\u00e9e",
+        "description": "R\u00e9capitulatif fiscal journalier.",
+        "operationId": "daily_summary_api_v1_fne_daily_summary_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "business_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Journ\u00e9e comptable",
+              "title": "Business Date"
+            },
+            "description": "Journ\u00e9e comptable"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FneDailySummaryOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fne/generate": {
+      "post": {
+        "tags": [
+          "FNE"
+        ],
+        "summary": "Alias r\u00e9tro-compatible pour \u00e9mettre une FNE",
+        "operationId": "legacy_generate_api_v1_fne_generate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FneGenerateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Legacy Generate Api V1 Fne Generate Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "deprecated": true,
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/fne/export": {
       "get": {
         "tags": [
-          "Facturation Normalisée (FNE)"
+          "FNE"
         ],
-        "summary": "Export Fne Csv",
+        "summary": "Exporter les documents FNE en CSV",
         "operationId": "export_fne_csv_api_v1_fne_export_get",
         "security": [
           {
@@ -2283,29 +2940,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Date début",
+              "description": "Date d\u00e9but",
               "title": "Start Date"
             },
-            "description": "Date début"
-          },
-          {
-            "name": "end_date",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Date fin",
-              "title": "End Date"
-            },
-            "description": "Date fin"
+            "description": "Date d\u00e9but"
           }
         ],
         "responses": {
@@ -2335,7 +2973,7 @@
         "tags": [
           "Impression & Tiroir"
         ],
-        "summary": "État de l'imprimante USB et du service d'impression",
+        "summary": "\u00c9tat de l'imprimante USB et du service d'impression",
         "operationId": "get_printer_status_api_v1_printing_status_get",
         "responses": {
           "200": {
@@ -2363,7 +3001,7 @@
         "tags": [
           "Impression & Tiroir"
         ],
-        "summary": "Ré-imprimer un duplicata de ticket (tracé)",
+        "summary": "R\u00e9-imprimer un duplicata de ticket (trac\u00e9)",
         "operationId": "reprint_ticket_api_v1_printing_reprint__order_id__post",
         "security": [
           {
@@ -2428,7 +3066,7 @@
         "tags": [
           "Impression & Tiroir"
         ],
-        "summary": "Ouvrir le tiroir-caisse manuellement (rôle responsable)",
+        "summary": "Ouvrir le tiroir-caisse manuellement (r\u00f4le responsable)",
         "operationId": "open_drawer_manually_api_v1_printing_open_drawer_post",
         "security": [
           {
@@ -2481,22 +3119,322 @@
         }
       }
     },
-    "/api/v1/settings": {
-      "get": {
+    "/api/v1/printing/test-ticket": {
+      "post": {
         "tags": [
-          "Paramètres Système"
+          "Impression & Tiroir"
         ],
-        "summary": "Consulter les paramètres système",
-        "operationId": "get_settings_api_v1_settings_get",
+        "summary": "Imprimer un ticket de test directement en ESC/POS",
+        "operationId": "print_test_ticket_api_v1_printing_test_ticket_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Device-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Device-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TestTicketRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Get Settings Api V1 Settings Get"
+                  "additionalProperties": true,
+                  "title": "Response Print Test Ticket Api V1 Printing Test Ticket Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings": {
+      "get": {
+        "tags": [
+          "Param\u00e8tres Syst\u00e8me"
+        ],
+        "summary": "Consulter les param\u00e8tres de l'\u00e9tablissement",
+        "operationId": "get_establishment_settings_api_v1_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstablishmentSettingsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Param\u00e8tres Syst\u00e8me"
+        ],
+        "summary": "Mettre \u00e0 jour les param\u00e8tres de l'\u00e9tablissement (Admin)",
+        "operationId": "update_establishment_settings_api_v1_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEstablishmentSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstablishmentSettingsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/settings/registers": {
+      "get": {
+        "tags": [
+          "Param\u00e8tres Syst\u00e8me"
+        ],
+        "summary": "Lister les postes de caisse",
+        "operationId": "list_cash_registers_api_v1_settings_registers_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CashRegisterResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Cash Registers Api V1 Settings Registers Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Param\u00e8tres Syst\u00e8me"
+        ],
+        "summary": "Cr\u00e9er un poste de caisse (Admin)",
+        "operationId": "create_cash_register_api_v1_settings_registers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCashRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CashRegisterResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/settings/registers/{register_id}": {
+      "patch": {
+        "tags": [
+          "Param\u00e8tres Syst\u00e8me"
+        ],
+        "summary": "Modifier un poste de caisse (Admin)",
+        "operationId": "update_cash_register_api_v1_settings_registers__register_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "register_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Register Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCashRegisterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CashRegisterResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Param\u00e8tres Syst\u00e8me"
+        ],
+        "summary": "D\u00e9sactiver un poste de caisse (Admin)",
+        "operationId": "delete_cash_register_api_v1_settings_registers__register_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "register_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Register Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Delete Cash Register Api V1 Settings Registers  Register Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -2507,6 +3445,36 @@
   },
   "components": {
     "schemas": {
+      "ApiWarning": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "ApiWarning"
+      },
       "CashMovementRequest": {
         "properties": {
           "type": {
@@ -2578,6 +3546,56 @@
           "created_at"
         ],
         "title": "CashMovementResponse"
+      },
+      "CashRegisterResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
+          "has_active_session": {
+            "type": "boolean",
+            "title": "Has Active Session",
+            "default": false
+          },
+          "active_session_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Session User"
+          },
+          "active_session_opened_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Session Opened At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "CashRegisterResponse"
       },
       "CashSessionResponse": {
         "properties": {
@@ -2799,163 +3817,290 @@
         ],
         "title": "CategoryResponse"
       },
-      "CustomerCreate": {
+      "CreateCashRegisterRequest": {
         "properties": {
           "name": {
             "type": "string",
-            "maxLength": 200,
-            "minLength": 2,
+            "maxLength": 50,
+            "minLength": 1,
             "title": "Name",
-            "example": "ENTREPRISE IVOIRIENNE SARL"
-          },
-          "ncc": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 50
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ncc",
-            "example": "2104598B"
-          },
-          "phone": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 50
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Phone",
-            "example": "+2250701020304"
-          },
-          "email": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Email",
-            "example": "contact@entreprise.ci"
-          },
-          "address": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 255
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Address",
-            "example": "Abidjan Cocody Deux Plateaux"
+            "description": "Nom du poste de caisse (ex: Caisse Bar, Caisse Terrasse)"
           }
         },
         "type": "object",
         "required": [
           "name"
         ],
-        "title": "CustomerCreate"
+        "title": "CreateCashRegisterRequest"
       },
-      "CustomerResponse": {
+      "CreateTableRequest": {
         "properties": {
-          "name": {
+          "label": {
             "type": "string",
-            "maxLength": 200,
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Label",
+            "description": "Nom ou num\u00e9ro de la table"
+          },
+          "zone": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Zone",
+            "description": "Zone du restaurant (ex: Salle, Terrasse)",
+            "default": "Salle"
+          },
+          "seats": {
+            "type": "integer",
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Seats",
+            "description": "Nombre de places assises / capacit\u00e9 en personnes",
+            "default": 4
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order",
+            "description": "Ordre d'affichage",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "CreateTableRequest"
+      },
+      "CreateUserRequest": {
+        "properties": {
+          "full_name": {
+            "type": "string",
+            "maxLength": 100,
             "minLength": 2,
-            "title": "Name",
-            "example": "ENTREPRISE IVOIRIENNE SARL"
+            "title": "Full Name",
+            "description": "Nom complet de l'utilisateur"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "CAISSIER",
+              "RESPONSABLE",
+              "ADMIN"
+            ],
+            "title": "Role",
+            "description": "R\u00f4le syst\u00e8me de l'utilisateur",
+            "default": "CAISSIER"
+          },
+          "pin": {
+            "type": "string",
+            "maxLength": 6,
+            "minLength": 4,
+            "title": "Pin",
+            "description": "Code PIN num\u00e9rique (4 \u00e0 6 chiffres)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "full_name",
+          "pin"
+        ],
+        "title": "CreateUserRequest"
+      },
+      "CustomerCreate": {
+        "properties": {
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
           },
           "ncc": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 50
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Ncc",
-            "example": "2104598B"
+            "title": "Ncc"
           },
           "phone": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 50
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Phone",
-            "example": "+2250701020304"
+            "title": "Phone"
           },
           "email": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 100
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Email",
-            "example": "contact@entreprise.ci"
+            "title": "Email"
+          },
+          "tax_regime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Regime"
           },
           "address": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 255
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Address",
-            "example": "Abidjan Cocody Deux Plateaux"
-          },
+            "title": "Address"
+          }
+        },
+        "type": "object",
+        "title": "CustomerCreate"
+      },
+      "CustomerOut": {
+        "properties": {
           "id": {
             "type": "string",
             "title": "Id"
           },
+          "company_name": {
+            "type": "string",
+            "title": "Company Name"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "ncc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ncc"
+          },
+          "tax_regime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Regime"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
           "is_active": {
             "type": "boolean",
-            "title": "Is Active"
+            "title": "Is Active",
+            "default": true
           },
           "created_at": {
-            "type": "string",
-            "format": "date-time",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Created At"
           },
           "updated_at": {
-            "type": "string",
-            "format": "date-time",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Updated At"
           }
         },
         "type": "object",
         "required": [
-          "name",
           "id",
-          "is_active",
-          "created_at",
-          "updated_at"
+          "company_name"
         ],
-        "title": "CustomerResponse"
+        "title": "CustomerOut"
       },
       "DashboardKpiResponse": {
         "properties": {
@@ -2970,6 +4115,31 @@
           "settled_orders": {
             "type": "integer",
             "title": "Settled Orders"
+          },
+          "open_orders": {
+            "type": "integer",
+            "title": "Open Orders",
+            "default": 0
+          },
+          "active_tables_count": {
+            "type": "integer",
+            "title": "Active Tables Count",
+            "default": 0
+          },
+          "total_tables_count": {
+            "type": "integer",
+            "title": "Total Tables Count",
+            "default": 14
+          },
+          "dine_in_orders_count": {
+            "type": "integer",
+            "title": "Dine In Orders Count",
+            "default": 0
+          },
+          "takeaway_orders_count": {
+            "type": "integer",
+            "title": "Takeaway Orders Count",
+            "default": 0
           },
           "total_sales_ttc_xof": {
             "type": "integer",
@@ -3000,6 +4170,13 @@
             },
             "type": "array",
             "title": "Top Products"
+          },
+          "hourly_sales": {
+            "items": {
+              "$ref": "#/components/schemas/HourlySalesItem"
+            },
+            "type": "array",
+            "title": "Hourly Sales"
           },
           "active_sessions_count": {
             "type": "integer",
@@ -3036,15 +4213,201 @@
         ],
         "title": "DashboardKpiResponse"
       },
-      "FneDocumentResponse": {
+      "EstablishmentSettingsResponse": {
+        "properties": {
+          "restaurant_name": {
+            "type": "string",
+            "title": "Restaurant Name",
+            "default": "Restaurant MYK"
+          },
+          "ncc": {
+            "type": "string",
+            "title": "Ncc",
+            "default": "1234567A"
+          },
+          "rccm": {
+            "type": "string",
+            "title": "Rccm",
+            "default": "CI-ABJ-2026-B-0000"
+          },
+          "address": {
+            "type": "string",
+            "title": "Address",
+            "default": "Abidjan, C\u00f4te d'Ivoire"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Phone",
+            "default": "+225 0102030405"
+          },
+          "default_vat_rate": {
+            "type": "number",
+            "title": "Default Vat Rate",
+            "default": 0.0
+          },
+          "receipt_footer": {
+            "type": "string",
+            "title": "Receipt Footer",
+            "default": "Merci de votre visite et \u00e0 tr\u00e8s bient\u00f4t !"
+          },
+          "print_width": {
+            "type": "integer",
+            "title": "Print Width",
+            "default": 48
+          },
+          "screen_lock_timeout_seconds": {
+            "type": "integer",
+            "title": "Screen Lock Timeout Seconds",
+            "default": 120
+          }
+        },
+        "type": "object",
+        "title": "EstablishmentSettingsResponse"
+      },
+      "FiscalGroupLine": {
+        "properties": {
+          "group": {
+            "type": "string",
+            "title": "Group",
+            "description": "Groupe fiscal",
+            "examples": [
+              "POISSONS"
+            ]
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity",
+            "description": "Quantit\u00e9 vendue"
+          },
+          "amount_xof": {
+            "type": "integer",
+            "title": "Amount Xof",
+            "description": "Montant TTC, en XOF"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group",
+          "quantity",
+          "amount_xof"
+        ],
+        "title": "FiscalGroupLine"
+      },
+      "FneDailySummaryOut": {
+        "properties": {
+          "business_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Business Date",
+            "description": "Journ\u00e9e comptable"
+          },
+          "paid_orders": {
+            "type": "integer",
+            "title": "Paid Orders",
+            "description": "Commandes sold\u00e9es"
+          },
+          "gross_ttc_xof": {
+            "type": "integer",
+            "title": "Gross Ttc Xof",
+            "description": "Chiffre d'affaires TTC des commandes sold\u00e9es"
+          },
+          "certified_orders": {
+            "type": "integer",
+            "title": "Certified Orders",
+            "description": "Commandes couvertes par une FNE certifi\u00e9e"
+          },
+          "certified_ttc_xof": {
+            "type": "integer",
+            "title": "Certified Ttc Xof",
+            "description": "TTC des commandes couvertes par une FNE"
+          },
+          "pending_documents": {
+            "type": "integer",
+            "title": "Pending Documents",
+            "description": "FNE de la journ\u00e9e en attente"
+          },
+          "by_fiscal_group": {
+            "items": {
+              "$ref": "#/components/schemas/FiscalGroupLine"
+            },
+            "type": "array",
+            "title": "By Fiscal Group",
+            "description": "Ventes par groupe fiscal",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "business_date",
+          "paid_orders",
+          "gross_ttc_xof",
+          "certified_orders",
+          "certified_ttc_xof",
+          "pending_documents"
+        ],
+        "title": "FneDailySummaryOut"
+      },
+      "FneDocumentOut": {
         "properties": {
           "id": {
             "type": "string",
-            "title": "Id"
+            "title": "Id",
+            "description": "Identifiant du document"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "FNE (vente) ou REFUND (avoir)"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "PENDING, SUBMITTING, CERTIFIED, QUEUED, FAILED ou MANUAL"
+          },
+          "is_uncertain": {
+            "type": "boolean",
+            "title": "Is Uncertain",
+            "description": "Issue inconnue (d\u00e9lai d\u00e9pass\u00e9, erreur serveur FNE) : v\u00e9rifier dans l'espace FNE puis `POST /fne/documents/{id}/resolve`. Jamais renvoy\u00e9 automatiquement",
+            "default": false
+          },
+          "template": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template",
+            "description": "Type de client"
           },
           "order_id": {
-            "type": "string",
-            "title": "Order Id"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id",
+            "description": "Commande factur\u00e9e"
+          },
+          "internal_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Internal Reference",
+            "description": "N\u00b0 de la commande",
+            "examples": [
+              "2026-09-24-0042"
+            ]
           },
           "customer_id": {
             "anyOf": [
@@ -3055,17 +4418,10 @@
                 "type": "null"
               }
             ],
-            "title": "Customer Id"
+            "title": "Customer Id",
+            "description": "Client entreprise"
           },
-          "document_type": {
-            "type": "string",
-            "title": "Document Type"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "invoice_number": {
+          "parent_document_id": {
             "anyOf": [
               {
                 "type": "string"
@@ -3074,9 +4430,10 @@
                 "type": "null"
               }
             ],
-            "title": "Invoice Number"
+            "title": "Parent Document Id",
+            "description": "Avoir : FNE d'origine"
           },
-          "qr_url": {
+          "external_number": {
             "anyOf": [
               {
                 "type": "string"
@@ -3085,9 +4442,13 @@
                 "type": "null"
               }
             ],
-            "title": "Qr Url"
+            "title": "External Number",
+            "description": "N\u00b0 FNE attribu\u00e9 par la DGI",
+            "examples": [
+              "1304777N26000000023"
+            ]
           },
-          "fne_token": {
+          "qr_payload": {
             "anyOf": [
               {
                 "type": "string"
@@ -3096,51 +4457,20 @@
                 "type": "null"
               }
             ],
-            "title": "Fne Token"
+            "title": "Qr Payload",
+            "description": "Lien de v\u00e9rification DGI : contenu du QR code, et page A4 imprimable"
           },
-          "payload": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Payload"
-          },
-          "response_payload": {
+          "fne_amount_ttc_xof": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Response Payload"
-          },
-          "error_message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error Message"
-          },
-          "retry_count": {
-            "type": "integer",
-            "title": "Retry Count"
-          },
-          "submitted_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Submitted At"
+            "title": "Fne Amount Ttc Xof",
+            "description": "Total TTC calcul\u00e9 par la FNE"
           },
           "certified_at": {
             "anyOf": [
@@ -3152,31 +4482,77 @@
                 "type": "null"
               }
             ],
-            "title": "Certified At"
+            "title": "Certified At",
+            "description": "Date de certification"
+          },
+          "attempts": {
+            "type": "integer",
+            "title": "Attempts",
+            "description": "Nombre d'envois \u00e0 la FNE",
+            "default": 0
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error",
+            "description": "Derni\u00e8re erreur (diagnostic, non affichable)"
+          },
+          "next_retry_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Retry At",
+            "description": "Prochain renvoi automatique (QUEUED)"
           },
           "created_at": {
             "type": "string",
             "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
+            "title": "Created At",
+            "description": "Cr\u00e9ation du document"
           }
         },
         "type": "object",
         "required": [
           "id",
-          "order_id",
-          "document_type",
+          "type",
           "status",
-          "payload",
-          "retry_count",
-          "created_at",
-          "updated_at"
+          "created_at"
         ],
-        "title": "FneDocumentResponse"
+        "title": "FneDocumentOut"
+      },
+      "FneDocumentResult": {
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/FneDocumentOut",
+            "description": "Document fiscal"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "description": "`FNE_REJECTED` (refus DGI), `FNE_UNCERTAIN`, `FNE_QUEUED`, `FNE_STICKER_LOW` (stock de stickers bas)",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "document"
+        ],
+        "title": "FneDocumentResult"
       },
       "FneGenerateRequest": {
         "properties": {
@@ -3194,6 +4570,16 @@
               }
             ],
             "title": "Customer Id"
+          },
+          "template": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FneTemplate"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -3201,6 +4587,173 @@
           "order_id"
         ],
         "title": "FneGenerateRequest"
+      },
+      "FneIssueIn": {
+        "properties": {
+          "template": {
+            "$ref": "#/components/schemas/FneTemplate",
+            "description": "B2C particulier \u00b7 B2B entreprise (NCC obligatoire) \u00b7 B2G administration \u00b7 B2F client \u00e0 l'international",
+            "default": "B2C"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id",
+            "description": "Client entreprise (`/customers`) ; obligatoire sauf en B2C"
+          },
+          "payment_method": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PaymentMethod"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Moyen de paiement d\u00e9clar\u00e9 ; d\u00e9faut : celui du plus gros montant encaiss\u00e9"
+          }
+        },
+        "type": "object",
+        "title": "FneIssueIn",
+        "examples": [
+          {
+            "template": "B2C"
+          },
+          {
+            "customer_id": "\u2026",
+            "template": "B2B"
+          }
+        ]
+      },
+      "FnePendingCountOut": {
+        "properties": {
+          "pending": {
+            "type": "integer",
+            "title": "Pending",
+            "description": "Documents en attente d'une action"
+          },
+          "uncertain": {
+            "type": "integer",
+            "title": "Uncertain",
+            "description": "Dont : issue inconnue, \u00e0 v\u00e9rifier dans l'espace FNE"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed",
+            "description": "Dont : refus\u00e9s par la DGI"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pending",
+          "uncertain",
+          "failed"
+        ],
+        "title": "FnePendingCountOut"
+      },
+      "FneRefundIn": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FneRefundLineIn"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Items",
+            "description": "Lignes de l'avoir"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "FneRefundIn"
+      },
+      "FneRefundLineIn": {
+        "properties": {
+          "order_item_id": {
+            "type": "string",
+            "title": "Order Item Id",
+            "description": "Ligne de la commande \u00e0 reprendre"
+          },
+          "quantity": {
+            "type": "integer",
+            "maximum": 999.0,
+            "minimum": 1.0,
+            "title": "Quantity",
+            "description": "Quantit\u00e9 reprise"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order_item_id",
+          "quantity"
+        ],
+        "title": "FneRefundLineIn"
+      },
+      "FneResolveIn": {
+        "properties": {
+          "is_certified": {
+            "type": "boolean",
+            "title": "Is Certified",
+            "description": "Constat dans l'espace FNE : la facture a-t-elle \u00e9t\u00e9 certifi\u00e9e (num\u00e9rot\u00e9e) ?"
+          },
+          "external_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Number",
+            "description": "N\u00b0 FNE relev\u00e9 ; obligatoire si certifi\u00e9e"
+          },
+          "qr_payload": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qr Payload",
+            "description": "Lien de v\u00e9rification relev\u00e9 dans l'espace FNE (facultatif)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "is_certified"
+        ],
+        "title": "FneResolveIn",
+        "examples": [
+          {
+            "external_number": "1304777N26000000023",
+            "is_certified": true
+          },
+          {
+            "is_certified": false
+          }
+        ]
+      },
+      "FneTemplate": {
+        "type": "string",
+        "enum": [
+          "B2C",
+          "B2B",
+          "B2G",
+          "B2F"
+        ],
+        "title": "FneTemplate"
       },
       "HTTPValidationError": {
         "properties": {
@@ -3262,6 +4815,29 @@
         "type": "object",
         "title": "HealthResponse"
       },
+      "HourlySalesItem": {
+        "properties": {
+          "hour": {
+            "type": "string",
+            "title": "Hour"
+          },
+          "total_sales_xof": {
+            "type": "integer",
+            "title": "Total Sales Xof"
+          },
+          "orders_count": {
+            "type": "integer",
+            "title": "Orders Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "hour",
+          "total_sales_xof",
+          "orders_count"
+        ],
+        "title": "HourlySalesItem"
+      },
       "InventoryCountRequest": {
         "properties": {
           "product_id": {
@@ -3277,7 +4853,7 @@
             "type": "string",
             "minLength": 3,
             "title": "Reason",
-            "default": "Inventaire physique périodique"
+            "default": "Inventaire physique p\u00e9riodique"
           }
         },
         "type": "object",
@@ -3287,6 +4863,39 @@
         ],
         "title": "InventoryCountRequest"
       },
+      "ItemSalesDetail": {
+        "properties": {
+          "product_name": {
+            "type": "string",
+            "title": "Product Name"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "unit_price_xof": {
+            "type": "integer",
+            "title": "Unit Price Xof"
+          },
+          "total_ttc_xof": {
+            "type": "integer",
+            "title": "Total Ttc Xof"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_name",
+          "category",
+          "quantity",
+          "unit_price_xof",
+          "total_ttc_xof"
+        ],
+        "title": "ItemSalesDetail"
+      },
       "LoginRequest": {
         "properties": {
           "pin": {
@@ -3294,7 +4903,7 @@
             "maxLength": 6,
             "minLength": 4,
             "title": "Pin",
-            "description": "Code PIN numérique (6 chiffres)"
+            "description": "Code PIN num\u00e9rique (4 \u00e0 6 chiffres)"
           },
           "device_id": {
             "type": "string",
@@ -3836,11 +5445,34 @@
         ],
         "title": "PaginatedResponse[UserResponse]"
       },
+      "PaymentMethod": {
+        "type": "string",
+        "enum": [
+          "CASH",
+          "MOBILE_MONEY",
+          "CARD",
+          "BANK_TRANSFER",
+          "CREDIT",
+          "OTHER"
+        ],
+        "title": "PaymentMethod"
+      },
       "PaymentMethodSplit": {
         "properties": {
           "method": {
             "type": "string",
             "title": "Method"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
           },
           "count": {
             "type": "integer",
@@ -3862,16 +5494,7 @@
       "PaymentRequest": {
         "properties": {
           "method": {
-            "type": "string",
-            "enum": [
-              "CASH",
-              "MOBILE_MONEY",
-              "CARD",
-              "BANK_TRANSFER",
-              "CREDIT",
-              "OTHER"
-            ],
-            "title": "Method"
+            "$ref": "#/components/schemas/PaymentMethod"
           },
           "amount_xof": {
             "type": "integer",
@@ -4040,7 +5663,7 @@
           "vat_rate": {
             "type": "number",
             "title": "Vat Rate",
-            "default": 18.0
+            "default": 0.0
           },
           "track_stock": {
             "type": "boolean",
@@ -4124,7 +5747,7 @@
           "vat_rate": {
             "type": "number",
             "title": "Vat Rate",
-            "default": 18.0
+            "default": 0.0
           },
           "track_stock": {
             "type": "boolean",
@@ -4215,6 +5838,22 @@
         ],
         "title": "RefreshTokenResponse"
       },
+      "ResetPinRequest": {
+        "properties": {
+          "new_pin": {
+            "type": "string",
+            "maxLength": 6,
+            "minLength": 4,
+            "title": "New Pin",
+            "description": "Nouveau code PIN num\u00e9rique (4 \u00e0 6 chiffres)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "new_pin"
+        ],
+        "title": "ResetPinRequest"
+      },
       "SessionCloseRequest": {
         "properties": {
           "counted_breakdown": {
@@ -4223,7 +5862,7 @@
             },
             "type": "object",
             "title": "Counted Breakdown",
-            "description": "Comptage par dénomination : {'10000': 12, '5000': 8, ...}"
+            "description": "Comptage par d\u00e9nomination : {'10000': 12, '5000': 8, ...}"
           },
           "notes": {
             "anyOf": [
@@ -4482,6 +6121,39 @@
               }
             ],
             "title": "Opened At"
+          },
+          "server_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Name"
+          },
+          "items_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Items Count"
+          },
+          "service_step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Step"
           }
         },
         "type": "object",
@@ -4558,6 +6230,39 @@
         ],
         "title": "TableResponse"
       },
+      "TestTicketRequest": {
+        "properties": {
+          "custom_header": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Header"
+          },
+          "custom_footer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Footer"
+          },
+          "width": {
+            "type": "integer",
+            "title": "Width",
+            "default": 32
+          }
+        },
+        "type": "object",
+        "title": "TestTicketRequest"
+      },
       "TopProductReport": {
         "properties": {
           "product_id": {
@@ -4597,6 +6302,262 @@
         ],
         "title": "TopProductReport"
       },
+      "UpdateCashRegisterRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "title": "UpdateCashRegisterRequest"
+      },
+      "UpdateEstablishmentSettingsRequest": {
+        "properties": {
+          "restaurant_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restaurant Name"
+          },
+          "ncc": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ncc"
+          },
+          "rccm": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rccm"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "default_vat_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Vat Rate"
+          },
+          "receipt_footer": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Footer"
+          },
+          "print_width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Print Width",
+            "description": "Largeur papier thermique en mm (58 ou 80) ou colonnes (32 ou 42)"
+          }
+        },
+        "type": "object",
+        "title": "UpdateEstablishmentSettingsRequest"
+      },
+      "UpdateTableRequest": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label",
+            "description": "Nom ou num\u00e9ro mis \u00e0 jour"
+          },
+          "zone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zone",
+            "description": "Zone mise \u00e0 jour"
+          },
+          "seats": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 50.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seats",
+            "description": "Nombre de places mis \u00e0 jour"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order",
+            "description": "Ordre d'affichage"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active",
+            "description": "Statut actif / archiv\u00e9"
+          }
+        },
+        "type": "object",
+        "title": "UpdateTableRequest"
+      },
+      "UpdateUserRequest": {
+        "properties": {
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name",
+            "description": "Nom complet mis \u00e0 jour"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "CAISSIER",
+                  "RESPONSABLE",
+                  "ADMIN"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role",
+            "description": "R\u00f4le syst\u00e8me mis \u00e0 jour"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active",
+            "description": "Statut actif / d\u00e9sactiv\u00e9"
+          }
+        },
+        "type": "object",
+        "title": "UpdateUserRequest"
+      },
       "UserResponse": {
         "properties": {
           "id": {
@@ -4620,6 +6581,18 @@
             "type": "boolean",
             "title": "Is Active",
             "default": true
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
           }
         },
         "type": "object",
@@ -4714,6 +6687,13 @@
             "type": "object",
             "title": "Sales By Category"
           },
+          "sales_by_item": {
+            "items": {
+              "$ref": "#/components/schemas/ItemSalesDetail"
+            },
+            "type": "array",
+            "title": "Sales By Item"
+          },
           "cash_movements_in_xof": {
             "type": "integer",
             "title": "Cash Movements In Xof"
@@ -4805,6 +6785,13 @@
             },
             "type": "object",
             "title": "Sales By Category"
+          },
+          "sales_by_item": {
+            "items": {
+              "$ref": "#/components/schemas/ItemSalesDetail"
+            },
+            "type": "array",
+            "title": "Sales By Item"
           },
           "cash_movements_in_xof": {
             "type": "integer",

@@ -62,6 +62,16 @@ async def custom_swagger_ui_html() -> HTMLResponse:
     return HTMLResponse(content=get_offline_docs_html(title=f"{settings.APP_NAME} - Documentation Interactive"))
 
 # Middlewares
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):  # type: ignore
+    request_id = request.headers.get("X-Request-Id", str(uuid.uuid4()))
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-Id"] = request_id
+    return response
+
+
+# CORSMiddleware ajouté en dernier pour être le wrapper le plus externe (capture toutes les réponses y compris erreurs 500)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -78,15 +88,6 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
-
-
-@app.middleware("http")
-async def request_id_middleware(request: Request, call_next):  # type: ignore
-    request_id = request.headers.get("X-Request-Id", str(uuid.uuid4()))
-    request.state.request_id = request_id
-    response = await call_next(request)
-    response.headers["X-Request-Id"] = request_id
-    return response
 
 
 # Enregistrement des gestionnaires d'erreurs RFC 7807 (problem+json)

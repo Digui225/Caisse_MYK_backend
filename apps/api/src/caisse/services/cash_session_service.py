@@ -57,6 +57,18 @@ class CashSessionService:
         b_date = validate_business_date(business_date_str)
         validate_opening_float(opening_float_xof)
 
+        # S'assurer que le poste de caisse existe
+        from caisse.models.cash_session import CashRegister
+        register = self.db.query(CashRegister).filter(CashRegister.id == cash_register_id).first()
+        if not register:
+            register = CashRegister(
+                id=cash_register_id,
+                name=f"Caisse {cash_register_id.upper()}",
+                is_active=True,
+            )
+            self.db.add(register)
+            self.db.flush()
+
         active = self.repo.get_active_by_register_id(cash_register_id)
         if active:
             raise CaisseException(

@@ -6,14 +6,18 @@ def calculate_vat_split(total_ttc_xof: int, vat_rate: float | int | Any = 18.0) 
     """Calcule la ventilation HT et TVA depuis un montant TTC en entier XOF.
     
     Règle métier ADR-04 :
-    - Le TTC fait foi.
-    - HT = round(TTC / (1 + taux))
+    - Le TTC fait foi (entier XOF).
+    - HT = arrondi commercial à l'entier le plus proche (demi-point supérieur) :
+      ht = floor(ttc / (1 + taux/100) + 0.5)
     - TVA = TTC - HT
     """
     if total_ttc_xof <= 0:
         return 0, 0
-    rate_factor = 1.0 + (float(vat_rate) / 100.0)
-    ht_xof = round(total_ttc_xof / rate_factor)
+    rate_val = float(vat_rate)
+    if rate_val <= 0:
+        return total_ttc_xof, 0
+    rate_factor = 1.0 + (rate_val / 100.0)
+    ht_xof = int(math.floor((total_ttc_xof / rate_factor) + 0.5))
     vat_xof = total_ttc_xof - ht_xof
     return ht_xof, vat_xof
 

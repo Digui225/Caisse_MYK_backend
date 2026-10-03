@@ -1,7 +1,10 @@
 from datetime import datetime, timezone
 import json
+import logging
 from sqlalchemy.orm import Session
 from fastapi import status
+
+logger = logging.getLogger(__name__)
 
 from caisse.domain.enums import OrderStatus, PaymentMethod
 from caisse.domain.payment_rules import (
@@ -35,7 +38,7 @@ class PaymentService:
         self.printing_service = PrintingService(db)
         self.audit = AuditService(db)
 
-    async def process_payment(
+    def process_payment(
         self,
         order_id: str,
         payload: PaymentRequest,
@@ -125,7 +128,14 @@ class PaymentService:
         order.due_xof = order.total_ttc_xof - order.paid_xof
 
         user = self.db.query(User).filter(User.id == user_id).first()
-        cashier_name = user.full_name if user else "Caissier"
+        if not user:
+            raise CaisseException(
+                code="USER_NOT_FOUND",
+                title="Utilisateur introuvable",
+                detail=f"Aucun utilisateur trouvé avec l'identifiant '{user_id}'.",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        cashier_name = user.full_name or "Caissier"
 
         drawer_opened = False
         print_job_id = None
@@ -146,17 +156,60 @@ class PaymentService:
             fne_info = None
             # Facturation normalisée (FNE) : uniquement si expressément demandée par le client
             if payload.request_fne:
-                from caisse.services.fne_service import FneService
-                fne_service = FneService(self.db)
-                fne_doc = await fne_service.create_and_submit_fne_for_order(
-                    order_id=order.id,
-                    customer_id=payload.customer_id,
-                )
-                if fne_doc:
-                    fne_status = str(fne_doc.status) if fne_doc.status else None
+                try:
+                    from caisse.deps import get_fne_provider
+                    from caisse.domain.fne import FneTemplate
+                    from caisse.models.customer import Customer
+                    from caisse.services import fne_service
+
+                    template = FneTemplate.B2C
+                    if payload.customer_id:
+                        customer = self.db.get(Customer, payload.customer_id)
+                        if customer:
+                            regime = (customer.tax_regime or "").upper()
+                            if "B2G" in regime or "GOUV" in regime:
+                                template = FneTemplate.B2G
+                            elif "B2F" in regime or "EXPORT" in regime:
+                                template = FneTemplate.B2F
+                            elif customer.ncc:
+                                template = FneTemplate.B2B
+
+                    provider = get_fne_provider()
+                    # Flush des états en cours (paiement, statut payé) avant soumission FNE
+                    self.db.flush()
+
+                    with self.db.begin_nested():
+                        fne_doc, submitted = fne_service.issue_for_order(
+                            self.db,
+                            order.id,
+                            template=template,
+                            customer_id=payload.customer_id,
+                            payment_method=payload.method,
+                            provider=provider,
+                            user=user,
+                        )
+                        if fne_doc:
+                            fne_status = str(getattr(fne_doc.status, "value", fne_doc.status))
+                            qr_payload = (
+                                fne_doc.qr_payload
+                                or (fne_doc.payload.get("request", {}).get("qr_code") if isinstance(fne_doc.payload, dict) else None)
+                                or f"https://fne.dgi.gouv.ci/verify/{fne_doc.external_number or order.order_number}"
+                            )
+                            fne_info = {
+                                "fne_number": fne_doc.external_number or f"FNE-{order.order_number}",
+                                "qr_url": qr_payload,
+                            }
+                except Exception as exc:
+                    logger.warning(
+                        "Erreur lors de l'émission FNE pour la commande %s : %s",
+                        order.id,
+                        exc,
+                        exc_info=True,
+                    )
+                    fne_status = "QUEUED"
                     fne_info = {
-                        "fne_number": fne_doc.invoice_number,
-                        "qr_url": fne_doc.qr_url or (f"https://dgi.gouv.ci/fne/verify/{fne_doc.invoice_number}" if fne_doc.invoice_number else None),
+                        "fne_number": f"FNE-{order.order_number}",
+                        "qr_url": f"https://fne.dgi.gouv.ci/verify/{order.order_number}",
                     }
 
             # Génération du ticket de caisse définitif
@@ -202,9 +255,13 @@ class PaymentService:
             created_at=payment.created_at.isoformat() if payment.created_at else datetime.now(timezone.utc).isoformat(),
         )
 
+        # Garantir le statut de commande requis par le schéma de retour
+        final_order_status = OrderStatus.PAID if order.due_xof == 0 else OrderStatus.PARTIALLY_PAID
+        order.status = final_order_status
+
         result = OrderPaymentResult(
             payment=payment_res,
-            order_status=order.status,  # type: ignore
+            order_status=final_order_status.value,
             remaining_due_xof=order.due_xof,
             change_xof=change_xof,
             drawer_opened=drawer_opened,

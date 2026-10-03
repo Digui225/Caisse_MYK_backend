@@ -1,11 +1,15 @@
 import os
+POSTGRES_TEST_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql+psycopg://caisse_user:caisse_pass@127.0.0.1:5441/caisse_test"
+)
 os.environ["APP_ENV"] = "test"
-os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+os.environ["DATABASE_URL"] = POSTGRES_TEST_URL
+os.environ["FNE_PROVIDER"] = "mock"
 
 from collections.abc import Generator
 import pytest
 from sqlalchemy import create_engine
-from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker, Session
 from fastapi.testclient import TestClient
 
@@ -15,12 +19,9 @@ from caisse.models.user import User
 from caisse.models.cash_session import CashRegister
 from caisse.security import hash_pin
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
-
 test_engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
+    POSTGRES_TEST_URL,
+    pool_pre_ping=True,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 
