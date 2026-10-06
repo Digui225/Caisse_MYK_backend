@@ -41,6 +41,7 @@ from caisse.repositories import fne as fne_repo
 from caisse.repositories import orders as orders_repo
 from caisse.repositories import settings as settings_repo
 from caisse.schemas.common import ApiWarning
+from caisse.schemas.customer import CustomerOut
 from caisse.schemas.fne import FiscalGroupLine, FneDailySummaryOut, FneDocumentOut
 from caisse.services import audit_service
 
@@ -76,6 +77,10 @@ def to_out_many(db: Session, docs: list[FneDocument]) -> list[FneDocumentOut]:
 
 
 def _out(doc: FneDocument, numbers: dict[str, str]) -> FneDocumentOut:
+    customer_out = CustomerOut.model_validate(doc.customer) if doc.customer else None
+    customer_name = doc.customer.name if doc.customer else None
+    customer_ncc = doc.customer.ncc if doc.customer else None
+
     return FneDocumentOut(
         id=str(doc.id),
         type=str(doc.type),
@@ -85,6 +90,9 @@ def _out(doc: FneDocument, numbers: dict[str, str]) -> FneDocumentOut:
         order_id=str(doc.order_id) if doc.order_id else None,
         internal_reference=numbers.get(str(doc.order_id)) if doc.order_id else None,
         customer_id=str(doc.customer_id) if doc.customer_id else None,
+        customer=customer_out,
+        customer_name=customer_name,
+        customer_ncc=customer_ncc,
         parent_document_id=str(doc.parent_document_id) if doc.parent_document_id else None,
         external_number=doc.external_number,
         qr_payload=doc.qr_payload,

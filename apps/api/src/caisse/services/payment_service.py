@@ -4,6 +4,8 @@ import logging
 from sqlalchemy.orm import Session
 from fastapi import status
 
+from caisse.config import get_settings
+
 logger = logging.getLogger(__name__)
 
 from caisse.domain.enums import OrderStatus, PaymentMethod
@@ -175,30 +177,30 @@ class PaymentService:
                                 template = FneTemplate.B2B
 
                     provider = get_fne_provider()
-                    # Flush des états en cours (paiement, statut payé) avant soumission FNE
-                    self.db.flush()
+                    # Commit préalable des états en cours (paiement, statut payé, stock) avant émission FNE
+                    self.db.commit()
 
-                    with self.db.begin_nested():
-                        fne_doc, submitted = fne_service.issue_for_order(
-                            self.db,
-                            order.id,
-                            template=template,
-                            customer_id=payload.customer_id,
-                            payment_method=payload.method,
-                            provider=provider,
-                            user=user,
+                    fne_doc, submitted = fne_service.issue_for_order(
+                        self.db,
+                        order.id,
+                        template=template,
+                        customer_id=payload.customer_id,
+                        payment_method=payload.method,
+                        provider=provider,
+                        user=user,
+                    )
+                    if fne_doc:
+                        fne_status = str(getattr(fne_doc.status, "value", fne_doc.status))
+                        v_base = get_settings().fne_verification_base_url
+                        qr_payload = (
+                            fne_doc.qr_payload
+                            or (fne_doc.payload.get("request", {}).get("qr_code") if isinstance(fne_doc.payload, dict) else None)
+                            or f"{v_base}/{fne_doc.external_number or order.order_number}"
                         )
-                        if fne_doc:
-                            fne_status = str(getattr(fne_doc.status, "value", fne_doc.status))
-                            qr_payload = (
-                                fne_doc.qr_payload
-                                or (fne_doc.payload.get("request", {}).get("qr_code") if isinstance(fne_doc.payload, dict) else None)
-                                or f"https://fne.dgi.gouv.ci/verify/{fne_doc.external_number or order.order_number}"
-                            )
-                            fne_info = {
-                                "fne_number": fne_doc.external_number or f"FNE-{order.order_number}",
-                                "qr_url": qr_payload,
-                            }
+                        fne_info = {
+                            "fne_number": fne_doc.external_number or f"FNE-{order.order_number}",
+                            "qr_url": qr_payload,
+                        }
                 except Exception as exc:
                     logger.warning(
                         "Erreur lors de l'émission FNE pour la commande %s : %s",
@@ -207,9 +209,10 @@ class PaymentService:
                         exc_info=True,
                     )
                     fne_status = "QUEUED"
+                    v_base = get_settings().fne_verification_base_url
                     fne_info = {
                         "fne_number": f"FNE-{order.order_number}",
-                        "qr_url": f"https://fne.dgi.gouv.ci/verify/{order.order_number}",
+                        "qr_url": f"{v_base}/{order.order_number}",
                     }
 
             # Génération du ticket de caisse définitif

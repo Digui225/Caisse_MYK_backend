@@ -98,6 +98,33 @@ async def get_z_report(
 
 
 @router.post(
+    "/{id}/print-z",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Imprimer le ticket de Rapport Z fiscal",
+)
+async def print_z_report_from_session(
+    id: str,
+    current_user: User = Depends(require_role("CAISSIER", "RESPONSABLE", "ADMIN")),
+    device_id: str = Depends(require_device_id),
+    db: Session = Depends(get_db),
+):
+    from caisse.services.printing_service import PrintingService
+    service = PrintingService(db)
+    job = service.print_z_report(
+        session_id=id,
+        cashier_name=current_user.full_name,
+        user_id=current_user.id,
+        device_id=device_id,
+    )
+    return {
+        "message": "Job d'impression du Rapport Z créé",
+        "print_job_id": job.id,
+        "session_id": id,
+    }
+
+
+
+@router.post(
     "/{id}/movements",
     response_model=CashMovementResponse,
     status_code=status.HTTP_201_CREATED,

@@ -89,7 +89,7 @@ def list_documents(
 def retry(
     document_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role("RESPONSABLE", "ADMIN")),
+    user: User = Depends(require_role("CAISSIER", "RESPONSABLE", "ADMIN")),
     provider: Any = Depends(get_fne_provider),
 ) -> FneDocumentResult:
     """Renvoie un document en QUEUED ou FAILED."""

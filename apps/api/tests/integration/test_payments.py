@@ -203,3 +203,90 @@ def test_printing_reprint_and_manual_drawer(client: TestClient) -> None:
     # 6. Ouverture manuelle tiroir : Responsable autorisé (200)
     r_drawer_res = client.post("/api/v1/printing/open-drawer", headers=resp_headers)
     assert r_drawer_res.status_code == 200
+
+
+def test_payment_with_fne_direct_certification(client: TestClient) -> None:
+    # 1. Login responsable pour créer produit et client B2B
+    resp_login = client.post(
+        "/api/v1/auth/login",
+        json={"pin": "654321", "device_id": "pos-terminal-01"},
+    )
+    resp_token = resp_login.json()["access_token"]
+    resp_headers = {"Authorization": f"Bearer {resp_token}", "X-Device-Id": "pos-terminal-01"}
+
+    cat_res = client.post(
+        "/api/v1/catalog/categories",
+        headers=resp_headers,
+        json={"name": "Plats B2B", "kind": "FOOD"},
+    )
+    cat_id = cat_res.json()["id"]
+
+    prod_res = client.post(
+        "/api/v1/catalog/products",
+        headers=resp_headers,
+        json={"category_id": cat_id, "name": "Menu Entreprise", "short_name": "MENU ENT", "price_xof": 16000},
+    )
+    prod_id = prod_res.json()["id"]
+
+    cust_res = client.post(
+        "/api/v1/customers",
+        headers=resp_headers,
+        json={"name": "CONFEDERATION GENERALE DES ENTREPRISES", "ncc": "1254632A", "phone": "0767639874"},
+    )
+    cust_id = cust_res.json()["id"]
+
+    # 2. Login caissier et session
+    cais_login = client.post(
+        "/api/v1/auth/login",
+        json={"pin": "123456", "device_id": "pos-terminal-01"},
+    )
+    cais_token = cais_login.json()["access_token"]
+    cais_headers = {"Authorization": f"Bearer {cais_token}", "X-Device-Id": "pos-terminal-01"}
+
+    client.post(
+        "/api/v1/cash-sessions",
+        headers={**cais_headers, "Idempotency-Key": "sess-idem-pay-fne-01"},
+        json={"cash_register_id": "reg-01", "opening_float_xof": 10000, "business_date": "2026-10-05"},
+    )
+
+    # 3. Commande
+    order_res = client.post(
+        "/api/v1/orders",
+        headers=cais_headers,
+        json={"table_id": "tbl-01", "guests_count": 1},
+    )
+    order_id = order_res.json()["id"]
+
+    client.post(
+        f"/api/v1/orders/{order_id}/items",
+        headers=cais_headers,
+        json={"product_id": prod_id, "quantity": 1},
+    )
+
+    # 4. Paiement avec request_fne=True et client B2B
+    pay_res = client.post(
+        f"/api/v1/orders/{order_id}/payments",
+        headers={**cais_headers, "Idempotency-Key": "idem-pay-fne-001"},
+        json={
+            "method": "CASH",
+            "amount_xof": 16000,
+            "tendered_xof": 16000,
+            "request_fne": True,
+            "customer_id": cust_id,
+        },
+    )
+    assert pay_res.status_code == 201
+    pay_data = pay_res.json()
+    assert pay_data["order_status"] == "PAID"
+    assert pay_data["remaining_due_xof"] == 0
+    # La FNE doit être certifiée directement à l'encaissement !
+    assert pay_data["fne_status"] == "CERTIFIED"
+
+    # Vérification que la FNE est bien enregistrée et certifiée
+    fne_res = client.get(f"/api/v1/orders/{order_id}/fne", headers=cais_headers)
+    assert fne_res.status_code == 200
+    fne_doc = fne_res.json()
+    assert fne_doc["status"] == "CERTIFIED"
+    assert fne_doc["template"] == "B2B"
+    assert fne_doc["external_number"] is not None
+

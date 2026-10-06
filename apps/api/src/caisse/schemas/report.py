@@ -24,6 +24,14 @@ class HourlySalesItem(BaseModel):
     orders_count: int
 
 
+class ClosingStatusResponse(BaseModel):
+    is_closed: bool
+    closed_at: Optional[str] = None
+    closed_by_name: Optional[str] = None
+    session_id: Optional[str] = None
+    z_number: Optional[int] = None
+
+
 class DashboardKpiResponse(BaseModel):
     business_date: str
     total_orders: int
@@ -44,3 +52,6 @@ class DashboardKpiResponse(BaseModel):
     low_stock_items_count: int
     fne_certified_count: int
     fne_pending_count: int
+    closing_status: Optional[ClosingStatusResponse] = None
+    last_x_report_at: Optional[str] = None
+

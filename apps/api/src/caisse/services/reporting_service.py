@@ -183,6 +183,49 @@ class ReportingService:
             or 0
         )
 
+        # 7. Statut réel de clôture de caisse
+        from caisse.models.user import User
+        from caisse.schemas.report import ClosingStatusResponse
+
+        open_session = (
+            self.db.query(CashSession)
+            .filter(CashSession.status == "OPEN")
+            .first()
+        )
+
+        latest_closed_session = (
+            self.db.query(CashSession)
+            .filter(CashSession.status == "CLOSED")
+            .order_by(CashSession.closed_at.desc())
+            .first()
+        )
+
+        closing_status: ClosingStatusResponse
+        if open_session:
+            closing_status = ClosingStatusResponse(
+                is_closed=False,
+                session_id=open_session.id,
+            )
+        elif latest_closed_session:
+            closed_by_name = None
+            if latest_closed_session.closed_by_user_id:
+                u = self.db.query(User).filter(User.id == latest_closed_session.closed_by_user_id).first()
+                if u:
+                    closed_by_name = u.full_name
+            closing_status = ClosingStatusResponse(
+                is_closed=True,
+                closed_at=latest_closed_session.closed_at.isoformat() if latest_closed_session.closed_at else None,
+                closed_by_name=closed_by_name,
+                session_id=latest_closed_session.id,
+                z_number=latest_closed_session.z_number,
+            )
+        else:
+            closing_status = ClosingStatusResponse(
+                is_closed=True,
+                closed_at=None,
+                closed_by_name=None,
+            )
+
         return DashboardKpiResponse(
             business_date=business_date_str,
             total_orders=total_orders,
@@ -203,4 +246,6 @@ class ReportingService:
             low_stock_items_count=low_stock_items_count,
             fne_certified_count=fne_certified_count,
             fne_pending_count=fne_pending_count,
+            closing_status=closing_status,
         )
+

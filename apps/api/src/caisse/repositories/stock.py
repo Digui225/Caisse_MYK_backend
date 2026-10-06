@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session, joinedload
+from caisse.models.catalog import Product
 from caisse.models.stock import StockItem, StockMovement
 from caisse.repositories.base import BaseRepository
 
@@ -37,7 +38,8 @@ class StockRepository(BaseRepository[StockItem]):
         return (
             self.db.query(StockItem)
             .options(joinedload(StockItem.product))
-            .join(StockItem.product)
+            .join(Product, StockItem.product_id == Product.id)
+            .filter(Product.track_stock.is_(True))
             .order_by(StockItem.quantity.asc())
             .all()
         )

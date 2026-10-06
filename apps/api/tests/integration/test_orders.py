@@ -161,6 +161,9 @@ def test_order_lifecycle(client: TestClient) -> None:
     table_in_board = [t for t in board_data["tables"] if t["id"] == table_1["id"]][0]
     assert table_in_board["is_occupied"] is True
     assert table_in_board["current_order_id"] == order_id
+    assert len(table_in_board["items_summary"]) > 0
+    assert table_in_board["items_summary"][0]["quantity"] >= 1
+    assert "name" in table_in_board["items_summary"][0]
 
     # 12. Annuler la commande avec motif
     cancel_res = client.post(

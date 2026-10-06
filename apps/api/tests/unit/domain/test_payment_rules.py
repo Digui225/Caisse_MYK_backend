@@ -130,3 +130,33 @@ def test_esc_pos_contains_chinese_cancellation_and_qr():
     qr_bytes = build_esc_pos_qr("https://dgi.ci/fne/123", size=4)
     assert b"\x1d\x28\x6b" in qr_bytes
 
+
+def test_format_z_report_text():
+    from caisse.domain.payment_rules import format_z_report_text
+    z_data = {
+        "z_number": 3,
+        "business_date": "2026-10-05",
+        "opened_at": "2026-10-05T09:00:00",
+        "closed_at": "2026-10-05T16:23:00",
+        "opening_float_xof": 50000,
+        "total_sales_ttc_xof": 93300,
+        "total_sales_ht_xof": 93300,
+        "total_sales_vat_xof": 0,
+        "payments_by_method": {"CASH": 93300},
+        "sales_by_category": {"Viandes": 31500, "Poissons": 52500},
+        "cash_movements_in_xof": 0,
+        "cash_movements_out_xof": 0,
+        "expected_cash_in_drawer_xof": 143300,
+        "counted_cash_xof": 143300,
+        "variance_xof": 0,
+        "orders_count": 5,
+        "cancelled_orders_count": 0,
+    }
+    txt = format_z_report_text({"name": "SYLLA PLUS"}, z_data, width=32)
+    assert "RAPPORT Z N* 3" in txt
+    assert "CLOTURE DEFINITIVE" in txt
+    assert "TOTAL VENTES TTC" in txt
+    assert "93 300 F" in txt
+    assert "ECART DE CAISSE" in txt
+
+

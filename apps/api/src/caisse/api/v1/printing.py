@@ -29,6 +29,22 @@ async def reprint_ticket(
     device_id: str = Depends(require_device_id),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    service = PrintingService(db)
+    if order_id.startswith("Z-"):
+        session_id = order_id[2:]
+        job = service.print_z_report(
+            session_id=session_id,
+            cashier_name=current_user.full_name,
+            user_id=current_user.id,
+            device_id=device_id,
+        )
+        return {
+            "message": "Job d'impression du Rapport Z créé",
+            "print_job_id": job.id,
+            "is_reprint": False,
+            "session_id": session_id,
+        }
+
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
         raise CaisseException(
@@ -38,7 +54,6 @@ async def reprint_ticket(
             status_code=status.HTTP_404_NOT_FOUND,
         )
 
-    service = PrintingService(db)
     job = service.reprint_ticket(
         order=order,
         cashier_name=current_user.full_name,
@@ -52,6 +67,28 @@ async def reprint_ticket(
         "is_reprint": True,
         "order_id": order_id,
     }
+
+
+@router.post("/z-report/{session_id}", status_code=status.HTTP_202_ACCEPTED, summary="Imprimer le ticket de Rapport Z fiscal")
+async def print_z_report_endpoint(
+    session_id: str,
+    current_user: User = Depends(require_role("CAISSIER", "RESPONSABLE", "ADMIN")),
+    device_id: str = Depends(require_device_id),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    service = PrintingService(db)
+    job = service.print_z_report(
+        session_id=session_id,
+        cashier_name=current_user.full_name,
+        user_id=current_user.id,
+        device_id=device_id,
+    )
+    return {
+        "message": "Job d'impression du Rapport Z créé",
+        "print_job_id": job.id,
+        "session_id": session_id,
+    }
+
 
 
 @router.post("/open-drawer", status_code=status.HTTP_200_OK, summary="Ouvrir le tiroir-caisse manuellement (rôle responsable)")

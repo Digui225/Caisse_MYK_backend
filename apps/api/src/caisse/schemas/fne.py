@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from caisse.domain.enums import FneDocumentType, FneStatus, PaymentMethod
 from caisse.domain.fne import FneTemplate
 from caisse.schemas.common import ApiWarning, BaseSchema
+from caisse.schemas.customer import CustomerOut
 
 
 class FneIssueIn(BaseSchema):
@@ -77,6 +78,9 @@ class FneDocumentOut(BaseSchema):
         default=None, description="N° de la commande", examples=["2026-09-24-0042"]
     )
     customer_id: str | None = Field(default=None, description="Client entreprise")
+    customer: Optional[CustomerOut] = Field(default=None, description="Client rattaché")
+    customer_name: Optional[str] = Field(default=None, description="Nom / Raison sociale du client")
+    customer_ncc: Optional[str] = Field(default=None, description="NCC du client")
     parent_document_id: str | None = Field(default=None, description="Avoir : FNE d'origine")
     external_number: str | None = Field(
         default=None, description="N° FNE attribué par la DGI", examples=["1304777N26000000023"]

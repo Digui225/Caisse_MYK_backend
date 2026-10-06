@@ -26,6 +26,14 @@ class UpdateTableRequest(BaseModel):
     is_active: bool | None = Field(None, description="Statut actif / archivé")
 
 
+class TableOrderItemSummary(BaseSchema):
+    name: str
+    quantity: int
+    line_total_xof: int
+    unit_price_xof: int | None = None
+    note: str | None = None
+
+
 class TableBoardItem(BaseSchema):
     id: str
     label: str
@@ -40,6 +48,7 @@ class TableBoardItem(BaseSchema):
     server_name: str | None = None
     items_count: int | None = None
     service_step: str | None = None
+    items_summary: list[TableOrderItemSummary] = []
 
 
 class TableBoardResponse(BaseSchema):

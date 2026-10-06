@@ -79,11 +79,10 @@ class PrintingService:
                 total_tendered += p.tendered_xof
 
         width = 32
-        if setting:
-            if setting.print_width in (58, 32):
-                width = 32
-            elif setting.print_width in (80, 42, 48):
-                width = 42
+        if setting and setting.print_width and setting.print_width >= 80:
+            width = 42
+        else:
+            width = 32
 
         totals = {
             "total_ttc_xof": order.total_ttc_xof,
@@ -148,10 +147,18 @@ class PrintingService:
         from caisse.models.fne import FneDocument
         fne_doc = self.db.query(FneDocument).filter(FneDocument.order_id == order.id).first()
         fne_info = None
-        if fne_doc and (fne_doc.invoice_number or fne_doc.qr_url):
+        if fne_doc and (fne_doc.external_number or getattr(fne_doc, "invoice_number", None) or fne_doc.qr_payload or getattr(fne_doc, "qr_url", None)):
+            from caisse.config import get_settings
+            v_base = get_settings().fne_verification_base_url
+            qr = fne_doc.qr_payload or getattr(fne_doc, "qr_url", None)
+            if qr and not str(qr).startswith("http"):
+                qr = f"{v_base}/{qr}"
+            elif not qr:
+                qr = f"{v_base}/{fne_doc.external_number or order.order_number}"
+
             fne_info = {
-                "fne_number": fne_doc.invoice_number,
-                "qr_url": fne_doc.qr_url,
+                "fne_number": fne_doc.external_number or getattr(fne_doc, "invoice_number", None) or f"FNE-{order.order_number}",
+                "qr_url": qr,
             }
 
         payments = order.payments or []
@@ -170,6 +177,58 @@ class PrintingService:
             entity_id=order.id,
             user_id=user_id,
             after={"print_job_id": job.id, "is_duplicate": True},
+            device_id=device_id,
+        )
+        self.db.commit()
+        return job
+
+    def print_z_report(
+        self,
+        session_id: str,
+        cashier_name: str,
+        user_id: str,
+        device_id: str | None = None,
+    ) -> PrintJob:
+        from caisse.services.cash_session_service import CashSessionService
+        from caisse.models.settings import EstablishmentSetting
+        from caisse.domain.payment_rules import format_z_report_text
+
+        session_service = CashSessionService(self.db)
+        z_report = session_service.get_z_report(session_id)
+
+        setting = self.db.query(EstablishmentSetting).first()
+        restaurant_info = {
+            "name": (setting.restaurant_name if setting and setting.restaurant_name else "SYLLA PLUS").upper(),
+            "address": setting.address if setting and setting.address else "Cocody Riviera Palmeraie · Abidjan",
+            "phone": setting.phone if setting and setting.phone else "+225 07 58 00 00 00",
+            "ncc": setting.ncc if setting and setting.ncc else "2104598B",
+            "rccm": setting.rccm if setting and setting.rccm else "CI-ABJ-2024-B-12345",
+            "footer": setting.receipt_footer if setting and setting.receipt_footer else "Merci de votre visite · A tres bientot !",
+        }
+
+        z_data = z_report.model_dump()
+        content = format_z_report_text(restaurant_info, z_data, width=32)
+
+        job = PrintJob(
+            order_id=None,
+            job_type="Z_REPORT",
+            content=content,
+            open_drawer=False,
+            cut=True,
+            is_duplicate=False,
+            status="QUEUED",
+        )
+        self.repo.add(job)
+        self.db.flush()
+
+        self._dispatch_job_to_agent(job)
+
+        self.audit.log(
+            action="Z_REPORT_PRINTED",
+            entity="CASH_SESSION",
+            entity_id=session_id,
+            user_id=user_id,
+            after={"print_job_id": job.id, "z_number": z_report.z_number},
             device_id=device_id,
         )
         self.db.commit()
@@ -276,13 +335,16 @@ class PrintingService:
             "welcome_message": welcome,
         }
 
+        from caisse.config import get_settings
+        v_base = get_settings().fne_verification_base_url
+
         order_info = {
             "order_number": "CMD-0042",
             "table_label": "12",
             "cashier_name": "Marc",
             "date_str": f"{datetime.now().strftime('%d/%m/%Y')} 13:45",
             "fne_number": "FNE-2026-10-01-MYK-0042",
-            "fne_qr_url": "https://dgi.gouv.ci/fne/verify/FNE-2026-10-01-MYK-0042",
+            "fne_qr_url": f"{v_base}/FNE-2026-10-01-MYK-0042",
         }
 
         items = [
@@ -311,7 +373,7 @@ class PrintingService:
             totals=totals,
             fne_info={
                 "fne_number": "FNE-2026-10-01-MYK-0042",
-                "qr_url": "https://dgi.gouv.ci/fne/verify/FNE-2026-10-01-MYK-0042",
+                "qr_url": f"{v_base}/FNE-2026-10-01-MYK-0042",
             },
             is_duplicate=False,
             width=width,

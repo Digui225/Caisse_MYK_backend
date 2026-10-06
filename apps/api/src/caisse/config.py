@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     def fne_api_key(self) -> str:
         return self.FNE_API_KEY
 
+    @property
+    def fne_verification_base_url(self) -> str:
+        if "54.247.95.108" in self.FNE_API_BASE_URL:
+            return "http://54.247.95.108/fr/verification"
+        return "https://fne.dgi.gouv.ci/verify"
+
 
     model_config = SettingsConfigDict(
         env_file=".env",

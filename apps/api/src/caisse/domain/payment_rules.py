@@ -1,3 +1,4 @@
+import textwrap
 import unicodedata
 from datetime import datetime
 from fastapi import status
@@ -238,23 +239,20 @@ def format_receipt_text(
             return f"{left_str} {right_str}"
         return f"{left_str}{' ' * spaces}{right_str}"
 
-    # 1. En-tête officiel restaurant avec logo
+    # 1. En-tête officiel restaurant : le logo graphique fait office de nom ("Sylla Plus")
     lines.append("[LOGO]")
 
-    name = restaurant_info.get("name", "SYLLA PLUS").upper()
-    if name != "SYLLA PLUS":
+    name = (restaurant_info.get("name") or "").strip().upper()
+    if name and name not in ("SYLLA PLUS", "RESTAURANT MYK", "CHEZ SYLLA PLUS"):
         lines.append(center(name))
 
     addr = restaurant_info.get("address", "Cocody Riviera Palmeraie · Abidjan")
     if addr:
-        if len(addr) > width and ("·" in addr or "." in addr or "," in addr):
-            clean_addr = addr.replace("·", ",").replace(".", ",")
-            for part in clean_addr.split(","):
-                p = part.strip()
-                if p:
-                    lines.append(center(p))
-        else:
-            lines.append(center(addr))
+        for part in addr.split("·"):
+            part_clean = part.strip()
+            if part_clean:
+                for chunk in textwrap.wrap(part_clean, width=width):
+                    lines.append(center(chunk))
 
     phone = restaurant_info.get("phone", "+225 07 58 00 00 00")
     if phone:
@@ -362,13 +360,137 @@ def format_receipt_text(
     # 7. Pied de ticket
     footer = restaurant_info.get("footer", "Merci de votre visite · A tres bientot !")
     if footer:
-        if len(footer) > width and ("·" in footer or "." in footer or "!" in footer):
-            clean_footer = footer.replace("·", ".").replace("!", "!.")
-            for part in clean_footer.split("."):
-                p = part.strip()
-                if p:
-                    lines.append(center(p))
-        else:
-            lines.append(center(footer))
+        for part in footer.split("·"):
+            part_clean = part.strip()
+            if part_clean:
+                for chunk in textwrap.wrap(part_clean, width=width):
+                    lines.append(center(chunk))
 
     return "\n".join(lines)
+
+
+def format_z_report_text(
+    restaurant_info: dict,
+    z_data: dict,
+    width: int = 32,
+) -> str:
+    """Genere le texte structure pour l'impression thermique du Rapport Z (58mm / 32 col)."""
+    sep_line = "-" * width
+    double_sep = "=" * width
+    lines = []
+
+    def center(txt: str) -> str:
+        txt = txt.strip()
+        if len(txt) > width:
+            return txt[:width]
+        return txt.center(width)
+
+    def row(left: str, right: str) -> str:
+        left_str = str(left)
+        right_str = str(right)
+        spaces = width - len(left_str) - len(right_str)
+        if spaces < 1:
+            max_left = width - len(right_str) - 1
+            if max_left > 0:
+                return f"{left_str[:max_left]} {right_str}"
+            return f"{left_str} {right_str}"
+        return f"{left_str}{' ' * spaces}{right_str}"
+
+    def fmt_money(val: int | float | None) -> str:
+        v = int(val or 0)
+        return f"{v:,} F".replace(",", " ")
+
+    # 1. En-tête restaurant
+    lines.append("[LOGO]")
+    name = (restaurant_info.get("name") or "").strip().upper()
+    if name and name not in ("SYLLA PLUS", "RESTAURANT MYK", "CHEZ SYLLA PLUS"):
+        lines.append(center(name))
+
+    addr = restaurant_info.get("address", "Cocody Riviera Palmeraie · Abidjan")
+    if addr:
+        for part in addr.split("·"):
+            part_clean = part.strip()
+            if part_clean:
+                for chunk in textwrap.wrap(part_clean, width=width):
+                    lines.append(center(chunk))
+
+    phone = restaurant_info.get("phone", "+225 07 58 00 00 00")
+    if phone:
+        lines.append(center(f"Tel : {phone}"))
+
+    ncc = restaurant_info.get("ncc", "2104598B")
+    if ncc:
+        lines.append(center(f"NCC : {ncc}"))
+
+    lines.append(double_sep)
+    z_num = z_data.get("z_number", 0)
+    lines.append(center(f"RAPPORT Z N* {z_num}"))
+    lines.append(center("CLOTURE DEFINITIVE & CERTIFIEE"))
+    lines.append(double_sep)
+
+    # 2. Métadonnées
+    lines.append(row("Date comptable", str(z_data.get("business_date", ""))))
+    opened = str(z_data.get("opened_at", ""))
+    if "T" in opened:
+        opened = opened.split(".")[0].replace("T", " ")
+    closed = str(z_data.get("closed_at", ""))
+    if "T" in closed:
+        closed = closed.split(".")[0].replace("T", " ")
+    lines.append(row("Ouvert le", opened[:16]))
+    lines.append(row("Cloture le", closed[:16]))
+    lines.append(sep_line)
+
+    # 3. Ventes globales
+    ttc = z_data.get("total_sales_ttc_xof", 0)
+    ht = z_data.get("total_sales_ht_xof", 0)
+    vat = z_data.get("total_sales_vat_xof", 0)
+    lines.append(row("TOTAL VENTES TTC", fmt_money(ttc)))
+    lines.append(row("TOTAL HT", fmt_money(ht)))
+    vat_label = "TVA COLLECTEE" if vat > 0 else "TVA (0% REGIME TEE)"
+    lines.append(row(vat_label, fmt_money(vat)))
+    lines.append(sep_line)
+
+    # 4. Règlements
+    lines.append(center("VENTILATION REGLEMENTS"))
+    pm = z_data.get("payments_by_method", {}) or {}
+    if pm:
+        for method, amt in pm.items():
+            lines.append(row(str(method), fmt_money(amt)))
+    else:
+        lines.append(center("Aucun reglement"))
+    lines.append(sep_line)
+
+    # 5. Ventes par catégorie
+    cats = z_data.get("sales_by_category", {}) or {}
+    if cats:
+        lines.append(center("VENTES PAR CATEGORIE"))
+        for cat_name, amt in cats.items():
+            lines.append(row(str(cat_name), fmt_money(amt)))
+        lines.append(sep_line)
+
+    # 6. Espèces & Écart
+    lines.append(center("BILAN ESPECES EN CAISSE"))
+    lines.append(row("Fond initial", fmt_money(z_data.get("opening_float_xof", 0))))
+    m_in = z_data.get("cash_movements_in_xof", 0)
+    m_out = z_data.get("cash_movements_out_xof", 0)
+    if m_in:
+        lines.append(row("Entrees caisse", f"+{fmt_money(m_in)}"))
+    if m_out:
+        lines.append(row("Sorties caisse", f"-{fmt_money(m_out)}"))
+    lines.append(row("Especes attendues", fmt_money(z_data.get("expected_cash_in_drawer_xof", 0))))
+    lines.append(row("Especes comptees", fmt_money(z_data.get("counted_cash_xof", 0))))
+    var = z_data.get("variance_xof", 0)
+    lines.append(row("ECART DE CAISSE", fmt_money(var)))
+    notes = z_data.get("notes")
+    if notes:
+        lines.append(f"Motif ecart: {notes}")
+    lines.append(double_sep)
+
+    # 7. Contrôle commandes
+    orders_cnt = z_data.get("orders_count", 0)
+    canc_cnt = z_data.get("cancelled_orders_count", 0)
+    lines.append(row(f"Commandes : {orders_cnt}", f"Annulations : {canc_cnt}"))
+    lines.append(double_sep)
+
+    return "\n".join(lines)
+

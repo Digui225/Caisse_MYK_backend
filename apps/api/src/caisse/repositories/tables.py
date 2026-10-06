@@ -44,6 +44,17 @@ class TableRepository(BaseRepository[RestaurantTable]):
                 last_cat = active_items[-1].category_snapshot if active_items else None
                 service_step = f"{last_cat} / En cours" if last_cat else "En cours"
 
+                items_summary = [
+                    {
+                        "name": it.product_name_snapshot,
+                        "quantity": it.quantity,
+                        "line_total_xof": it.line_total_xof,
+                        "unit_price_xof": it.unit_price_xof,
+                        "note": it.note,
+                    }
+                    for it in active_items
+                ]
+
                 board_items.append(
                     {
                         "id": t.id,
@@ -59,6 +70,7 @@ class TableRepository(BaseRepository[RestaurantTable]):
                         "server_name": active_order.opened_by.full_name if active_order.opened_by else "Serveur",
                         "items_count": items_count,
                         "service_step": service_step,
+                        "items_summary": items_summary,
                     }
                 )
             else:
@@ -77,6 +89,7 @@ class TableRepository(BaseRepository[RestaurantTable]):
                         "server_name": None,
                         "items_count": None,
                         "service_step": None,
+                        "items_summary": [],
                     }
                 )
         return board_items
