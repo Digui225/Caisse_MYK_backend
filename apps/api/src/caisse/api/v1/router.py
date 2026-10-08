@@ -13,6 +13,7 @@ from caisse.api.v1.customers import router as customers_router
 from caisse.api.v1.fne import router as fne_router
 from caisse.api.v1.printing import router as printing_router
 from caisse.api.v1.settings import router as settings_router
+from caisse.api.v1.ws import router as ws_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 
@@ -29,3 +30,5 @@ api_v1_router.include_router(customers_router)
 api_v1_router.include_router(fne_router)
 api_v1_router.include_router(printing_router)
 api_v1_router.include_router(settings_router)
+api_v1_router.include_router(ws_router)
+

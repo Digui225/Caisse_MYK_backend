@@ -32,6 +32,12 @@ class ClosingStatusResponse(BaseModel):
     z_number: Optional[int] = None
 
 
+class CashierSalesResponse(BaseModel):
+    cashier_name: str
+    orders_count: int
+    total_sales_ttc_xof: int
+
+
 class DashboardKpiResponse(BaseModel):
     business_date: str
     total_orders: int
@@ -54,4 +60,6 @@ class DashboardKpiResponse(BaseModel):
     fne_pending_count: int
     closing_status: Optional[ClosingStatusResponse] = None
     last_x_report_at: Optional[str] = None
+    sales_by_cashier: list[CashierSalesResponse] = Field(default_factory=list)
+
 

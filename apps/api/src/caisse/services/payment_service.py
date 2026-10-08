@@ -285,7 +285,27 @@ class PaymentService:
             self.db.add(record)
 
         self.db.commit()
+
+        try:
+            from caisse.infrastructure.websocket.manager import ws_manager
+            event_type = "ORDER_PAID" if order.due_xof == 0 else "ORDER_PARTIALLY_PAID"
+            ws_manager.broadcast_sync(
+                event_type,
+                {
+                    "order_id": order.id,
+                    "order_number": order.order_number,
+                    "status": final_order_status.value,
+                    "total_ttc_xof": order.total_ttc_xof,
+                    "paid_xof": order.paid_xof,
+                    "amount_paid_xof": payload.amount_xof,
+                    "table_id": order.table_id,
+                },
+            )
+        except Exception as ws_err:
+            logger.debug(f"Erreur lors de la diffusion WebSocket de l'événement de paiement: {ws_err}")
+
         return result
+
 
     def list_order_payments(self, order_id: str) -> list[PaymentResponse]:
         payments = self.payment_repo.list_by_order_id(order_id)

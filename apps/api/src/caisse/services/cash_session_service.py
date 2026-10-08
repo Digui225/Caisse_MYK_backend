@@ -24,6 +24,7 @@ from caisse.schemas.sessions import (
 )
 from caisse.services.audit_service import AuditService
 from caisse.services.printing_service import PrintingService
+from caisse.infrastructure.websocket.manager import ws_manager
 
 
 class CashSessionService:
@@ -99,6 +100,15 @@ class CashSessionService:
         )
         self.db.commit()
 
+        ws_manager.broadcast_sync(
+            "SESSION_OPENED",
+            {
+                "session_id": created.id,
+                "cash_register_id": created.cash_register_id,
+                "business_date": str(created.business_date),
+            },
+        )
+
         return self._to_session_response(created)
 
     def add_movement(
@@ -148,6 +158,15 @@ class CashSessionService:
             device_id=device_id,
         )
         self.db.commit()
+
+        ws_manager.broadcast_sync(
+            "CASH_MOVEMENT",
+            {
+                "session_id": created.cash_session_id,
+                "type": created.type,
+                "amount_xof": created.amount_xof,
+            },
+        )
 
         return CashMovementResponse(
             id=created.id,
@@ -325,6 +344,15 @@ class CashSessionService:
             device_id=device_id,
         )
         self.db.commit()
+
+        ws_manager.broadcast_sync(
+            "SESSION_CLOSED",
+            {
+                "session_id": session.id,
+                "z_number": session.z_number,
+                "variance_xof": session.variance_xof,
+            },
+        )
 
         return self._to_session_response(session)
 

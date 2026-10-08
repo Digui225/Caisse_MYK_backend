@@ -24,6 +24,8 @@ from caisse.schemas.orders import (
     OrderCancelRequest,
 )
 from caisse.services.audit_service import AuditService
+from caisse.infrastructure.websocket.manager import ws_manager
+
 
 
 class OrderService:
@@ -77,6 +79,9 @@ class OrderService:
         b_date_str = active_session.business_date.isoformat()
         seq_num = self.order_repo.get_next_daily_sequence(b_date_str)
         order_number = generate_order_number(b_date_str, seq_num)
+        while self.db.query(Order.id).filter(Order.order_number == order_number).first():
+            seq_num += 1
+            order_number = generate_order_number(b_date_str, seq_num)
 
         order = Order(
             order_number=order_number,
@@ -103,6 +108,17 @@ class OrderService:
             device_id=device_id,
         )
         self.db.commit()
+
+        ws_manager.broadcast_sync(
+            "ORDER_CREATED",
+            {
+                "order_id": created.id,
+                "order_number": created.order_number,
+                "table_id": created.table_id,
+                "total_ttc_xof": created.total_ttc_xof,
+                "status": created.status,
+            },
+        )
 
         return self._to_order_response(created, table_label=table_label)
 
@@ -205,6 +221,17 @@ class OrderService:
         )
         self.db.commit()
 
+        ws_manager.broadcast_sync(
+            "ORDER_UPDATED",
+            {
+                "order_id": order.id,
+                "order_number": order.order_number,
+                "table_id": order.table_id,
+                "total_ttc_xof": order.total_ttc_xof,
+                "status": order.status,
+            },
+        )
+
         return self._to_order_response(order)
 
     def remove_item(
@@ -265,6 +292,17 @@ class OrderService:
         )
         self.db.commit()
 
+        ws_manager.broadcast_sync(
+            "ORDER_UPDATED",
+            {
+                "order_id": order.id,
+                "order_number": order.order_number,
+                "table_id": order.table_id,
+                "total_ttc_xof": order.total_ttc_xof,
+                "status": order.status,
+            },
+        )
+
         return self._to_order_response(order)
 
     def cancel_order(
@@ -299,6 +337,16 @@ class OrderService:
             device_id=device_id,
         )
         self.db.commit()
+
+        ws_manager.broadcast_sync(
+            "ORDER_CANCELLED",
+            {
+                "order_id": order.id,
+                "order_number": order.order_number,
+                "table_id": order.table_id,
+                "status": order.status,
+            },
+        )
 
         return self._to_order_response(order)
 

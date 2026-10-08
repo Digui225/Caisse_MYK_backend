@@ -27,12 +27,19 @@ class OrderRepository(BaseRepository[Order]):
         )
 
     def get_next_daily_sequence(self, business_date_str: str) -> int:
-        count = (
-            self.db.query(Order)
+        last_order = (
+            self.db.query(Order.order_number)
             .filter(Order.order_number.like(f"{business_date_str}-%"))
-            .count()
+            .order_by(Order.order_number.desc())
+            .first()
         )
-        return count + 1
+        if last_order and last_order[0]:
+            try:
+                seq_str = last_order[0].rsplit("-", 1)[-1]
+                return int(seq_str) + 1
+            except (ValueError, IndexError):
+                pass
+        return 1
 
     def add_item(self, item: OrderItem) -> OrderItem:
         self.db.add(item)

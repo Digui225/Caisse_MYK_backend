@@ -9,6 +9,7 @@ from caisse.models.order import Order, OrderItem
 from caisse.models.payment import Payment
 from caisse.models.stock import StockItem
 from caisse.schemas.report import (
+    CashierSalesResponse,
     DashboardKpiResponse,
     HourlySalesItem,
     PaymentMethodSplit,
@@ -226,6 +227,59 @@ class ReportingService:
                 closed_by_name=None,
             )
 
+        # 8. Ventes par caissier
+        cashier_map: dict[str, dict[str, Any]] = {}
+        for o in settled_orders_list:
+            user_obj = o.closed_by or o.opened_by
+            cashier_name = user_obj.full_name if user_obj else None
+            if not cashier_name and o.closed_by_user_id:
+                u = self.db.query(User).filter(User.id == o.closed_by_user_id).first()
+                if u:
+                    cashier_name = u.full_name
+            if not cashier_name and o.opened_by_user_id:
+                u = self.db.query(User).filter(User.id == o.opened_by_user_id).first()
+                if u:
+                    cashier_name = u.full_name
+            if not cashier_name and open_session:
+                sess_user = open_session.opened_by or (
+                    self.db.query(User).filter(User.id == open_session.opened_by_user_id).first()
+                    if open_session.opened_by_user_id else None
+                )
+                if sess_user:
+                    cashier_name = sess_user.full_name
+
+            cashier_name = cashier_name or "Caissier"
+            if cashier_name not in cashier_map:
+                cashier_map[cashier_name] = {
+                    "cashier_name": cashier_name,
+                    "orders_count": 0,
+                    "total_sales_ttc_xof": 0,
+                }
+            cashier_map[cashier_name]["orders_count"] += 1
+            cashier_map[cashier_name]["total_sales_ttc_xof"] += o.total_ttc_xof
+
+        # Si aucune commande réglée mais qu'une session est ouverte, afficher le caissier de la session
+        if not cashier_map and open_session:
+            sess_user = open_session.opened_by or (
+                self.db.query(User).filter(User.id == open_session.opened_by_user_id).first()
+                if open_session.opened_by_user_id else None
+            )
+            name = sess_user.full_name if sess_user else "Caissier en service"
+            cashier_map[name] = {
+                "cashier_name": name,
+                "orders_count": 0,
+                "total_sales_ttc_xof": 0,
+            }
+
+        sales_by_cashier = [
+            CashierSalesResponse(
+                cashier_name=data["cashier_name"],
+                orders_count=data["orders_count"],
+                total_sales_ttc_xof=data["total_sales_ttc_xof"],
+            )
+            for data in sorted(cashier_map.values(), key=lambda x: x["total_sales_ttc_xof"], reverse=True)
+        ]
+
         return DashboardKpiResponse(
             business_date=business_date_str,
             total_orders=total_orders,
@@ -247,5 +301,6 @@ class ReportingService:
             fne_certified_count=fne_certified_count,
             fne_pending_count=fne_pending_count,
             closing_status=closing_status,
+            sales_by_cashier=sales_by_cashier,
         )
 
