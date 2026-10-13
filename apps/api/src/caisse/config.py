@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import Literal
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,6 +10,9 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     PORT: int = 8001
     HOST: str = "0.0.0.0"
+    ALLOWED_HOSTS: list[str] = ["localhost", "127.0.0.1", "testserver"]
+    ENABLE_DOCS: bool | None = None
+    MAX_REQUEST_BODY_SIZE: int = 2 * 1024 * 1024  # 2 Mo par défaut
 
     # Base de données PostgreSQL
     DATABASE_URL: str = "postgresql+psycopg://caisse:caisse_secret@localhost:5432/caisse"
@@ -57,6 +61,25 @@ class Settings(BaseSettings):
             return "http://54.247.95.108/fr/verification"
         return "https://fne.dgi.gouv.ci/verify"
 
+    @property
+    def docs_enabled(self) -> bool:
+        if self.ENABLE_DOCS is not None:
+            return self.ENABLE_DOCS
+        return self.APP_ENV != "production"
+
+    @model_validator(mode="after")
+    def validate_production_security(self) -> "Settings":
+        if self.APP_ENV == "production":
+            if self.DEBUG:
+                raise ValueError("DEBUG ne doit pas être actif (True) en environnement de production.")
+            if (
+                self.JWT_SECRET == "default_secret_key_to_be_replaced_in_env_with_at_least_64_random_characters"
+                or len(self.JWT_SECRET) < 32
+            ):
+                raise ValueError(
+                    "JWT_SECRET doit être défini avec une clé forte d'au moins 32 caractères en environnement de production."
+                )
+        return self
 
     model_config = SettingsConfigDict(
         env_file=".env",

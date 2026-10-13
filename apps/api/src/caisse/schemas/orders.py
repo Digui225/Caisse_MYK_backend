@@ -1,6 +1,6 @@
 from typing import Literal
 from pydantic import BaseModel, Field
-from caisse.schemas.common import BaseSchema
+from caisse.schemas.common import BaseSchema, BaseRequestSchema
 
 
 class OrderItemResponse(BaseSchema):
@@ -37,12 +37,12 @@ class OrderResponse(BaseSchema):
     cancelled_reason: str | None = None
 
 
-class OrderCreateRequest(BaseModel):
+class OrderCreateRequest(BaseRequestSchema):
     table_id: str | None = None
     guests_count: int = 1
 
 
-class OrderItemAddRequest(BaseModel):
+class OrderItemAddRequest(BaseRequestSchema):
     product_id: str | None = None
     custom_name: str | None = None
     unit_price_xof: int | None = None
@@ -50,9 +50,9 @@ class OrderItemAddRequest(BaseModel):
     note: str | None = None
 
 
-class OrderItemRemoveRequest(BaseModel):
+class OrderItemRemoveRequest(BaseRequestSchema):
     reason: str = Field(..., min_length=3)
 
 
-class OrderCancelRequest(BaseModel):
+class OrderCancelRequest(BaseRequestSchema):
     reason: str = Field(..., min_length=3)

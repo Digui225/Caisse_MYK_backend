@@ -83,9 +83,12 @@ def purge_mock_data(db: Session) -> dict[str, int]:
         "idempotency_records",
     ]
 
+    allowed_tables = frozenset(tables_to_purge)
     deleted_counts = {}
     for tbl in tables_to_purge:
-        result = db.execute(text(f"DELETE FROM {tbl}"))
+        if tbl not in allowed_tables:
+            raise ValueError(f"Table non autorisée pour la purge : {tbl}")
+        result = db.execute(text(f'DELETE FROM "{tbl}"'))
         deleted_counts[tbl] = result.rowcount if isinstance(result, CursorResult) and result.rowcount is not None else 0
 
     db.commit()

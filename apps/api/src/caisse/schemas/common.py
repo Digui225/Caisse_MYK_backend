@@ -8,6 +8,10 @@ class BaseSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
+class BaseRequestSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
 class PaginatedResponse(BaseSchema, Generic[T]):
     items: list[T]
     next_cursor: str | None = None

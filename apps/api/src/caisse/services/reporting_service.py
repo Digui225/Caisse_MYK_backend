@@ -169,19 +169,23 @@ class ReportingService:
             or 0
         )
 
-        # 6. FNE KPIs
-        fne_certified_count = (
-            self.db.query(func.count(FneDocument.id))
-            .filter(FneDocument.status.in_(["CERTIFIED", "MANUAL_EXPORTED"]))
-            .scalar()
-            or 0
+        # 6. FNE KPIs (filtrés sur la journée sélectionnée)
+        daily_order_ids_set = {o.id for o in daily_orders}
+        all_fne_docs = self.db.query(FneDocument).all()
+        daily_fne_docs = [
+            d
+            for d in all_fne_docs
+            if (d.created_at and d.created_at.strftime("%Y-%m-%d") == business_date_str)
+            or (d.certified_at and d.certified_at.strftime("%Y-%m-%d") == business_date_str)
+            or (d.order_id and d.order_id in daily_order_ids_set)
+        ]
+
+        fne_certified_count = sum(
+            1 for d in daily_fne_docs if d.status in ("CERTIFIED", "MANUAL_EXPORTED")
         )
 
-        fne_pending_count = (
-            self.db.query(func.count(FneDocument.id))
-            .filter(FneDocument.status.in_(["QUEUED", "PENDING", "FAILED"]))
-            .scalar()
-            or 0
+        fne_pending_count = sum(
+            1 for d in daily_fne_docs if d.status in ("QUEUED", "PENDING", "FAILED")
         )
 
         # 7. Statut réel de clôture de caisse

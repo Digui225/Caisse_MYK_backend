@@ -1,10 +1,10 @@
 from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, Field
-from caisse.schemas.common import BaseSchema
+from caisse.schemas.common import BaseSchema, BaseRequestSchema
 
 
-class LoginRequest(BaseModel):
+class LoginRequest(BaseRequestSchema):
     pin: str = Field(..., min_length=4, max_length=6, description="Code PIN numérique (4 à 6 chiffres)")
     device_id: str = Field(..., description="Identifiant unique du poste caisse")
 
@@ -17,19 +17,19 @@ class UserResponse(BaseSchema):
     last_login_at: datetime | None = None
 
 
-class CreateUserRequest(BaseModel):
+class CreateUserRequest(BaseRequestSchema):
     full_name: str = Field(..., min_length=2, max_length=100, description="Nom complet de l'utilisateur")
     role: Literal["CAISSIER", "RESPONSABLE", "ADMIN"] = Field("CAISSIER", description="Rôle système de l'utilisateur")
     pin: str = Field(..., min_length=4, max_length=6, description="Code PIN numérique (4 à 6 chiffres)")
 
 
-class UpdateUserRequest(BaseModel):
+class UpdateUserRequest(BaseRequestSchema):
     full_name: str | None = Field(None, min_length=2, max_length=100, description="Nom complet mis à jour")
     role: Literal["CAISSIER", "RESPONSABLE", "ADMIN"] | None = Field(None, description="Rôle système mis à jour")
     is_active: bool | None = Field(None, description="Statut actif / désactivé")
 
 
-class ResetPinRequest(BaseModel):
+class ResetPinRequest(BaseRequestSchema):
     new_pin: str = Field(..., min_length=4, max_length=6, description="Nouveau code PIN numérique (4 à 6 chiffres)")
 
 
@@ -48,7 +48,7 @@ class LoginResponse(BaseSchema):
     open_session: OpenSessionInfo | None = None
 
 
-class RefreshTokenRequest(BaseModel):
+class RefreshTokenRequest(BaseRequestSchema):
     refresh_token: str
 
 
@@ -58,7 +58,7 @@ class RefreshTokenResponse(BaseSchema):
     expires_in: int = 900
 
 
-class OverrideRequest(BaseModel):
+class OverrideRequest(BaseRequestSchema):
     manager_pin: str = Field(..., min_length=4, max_length=6)
     reason: str = Field(..., min_length=3)
     target_action: str

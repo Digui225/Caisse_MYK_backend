@@ -207,6 +207,38 @@ def build_esc_pos_bytes(
     return bytes(raw)
 
 
+def get_payment_method_display_label(method: str, provider: str | None = None) -> str:
+    """Retourne un libellé clair et personnalisé pour le ticket (Wave, Orange Money, Espèces...)."""
+    m = (method or "").upper()
+    prov = (provider or "").upper()
+
+    if m == "MOBILE_MONEY" or "MOBILE" in m:
+        if "WAVE" in prov:
+            return "Paiement Wave :"
+        if "ORANGE" in prov:
+            return "Paiement Orange Money :"
+        if "MTN" in prov or "MOMO" in prov:
+            return "Paiement MTN MoMo :"
+        if "MOOV" in prov:
+            return "Paiement Moov Money :"
+        if provider:
+            return f"Paiement {provider} :"
+        return "Paiement Mobile Money :"
+
+    if m == "CASH" or "ESPECE" in m:
+        return "Reglement Especes :"
+
+    if m == "CARD" or "CARTE" in m or "CB" in m:
+        return "Paiement Carte bancaire :"
+
+    if m == "BANK_TRANSFER" or "VIREMENT" in m:
+        return "Paiement Virement :"
+
+    if provider:
+        return f"Paiement {method} ({provider}) :"
+    return f"Paiement {method} :"
+
+
 def format_receipt_text(
     restaurant_info: dict,
     order_info: dict,
@@ -329,10 +361,8 @@ def format_receipt_text(
     # 5. Règlements & Rendu
     for p in payments:
         method = p.get("method", "PAIEMENT")
-        if method == "CASH" or "ESPECE" in str(method).upper():
-            method_label = "Reglement Especes :"
-        else:
-            method_label = f"Paiement {method} :"
+        provider = p.get("provider")
+        method_label = get_payment_method_display_label(method, provider)
         amount_str = f"{p.get('amount_xof', 0):,} F".replace(",", " ")
         lines.append(row(method_label, amount_str))
 

@@ -14,11 +14,17 @@ from caisse.schemas.auth import (
     UserResponse,
 )
 from caisse.services.auth_service import AuthService
+from caisse.security_rate_limit import require_rate_limit
 
 router = APIRouter(prefix="/auth", tags=["Authentification"])
 
 
-@router.post("/login", response_model=LoginResponse, summary="Connexion par code PIN")
+@router.post(
+    "/login",
+    response_model=LoginResponse,
+    summary="Connexion par code PIN",
+    dependencies=[Depends(require_rate_limit(max_requests=10, window_seconds=60))],
+)
 async def login(
     payload: LoginRequest,
     request: Request,
@@ -33,7 +39,12 @@ async def login(
     )
 
 
-@router.post("/refresh", response_model=RefreshTokenResponse, summary="Renouvellement du jeton JWT")
+@router.post(
+    "/refresh",
+    response_model=RefreshTokenResponse,
+    summary="Renouvellement du jeton JWT",
+    dependencies=[Depends(require_rate_limit(max_requests=30, window_seconds=60))],
+)
 async def refresh_token(
     payload: RefreshTokenRequest,
     db: Session = Depends(get_db),
@@ -57,7 +68,12 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)) 
     )
 
 
-@router.post("/override", response_model=OverrideResponse, summary="Autorisation ponctuelle responsable")
+@router.post(
+    "/override",
+    response_model=OverrideResponse,
+    summary="Autorisation ponctuelle responsable",
+    dependencies=[Depends(require_rate_limit(max_requests=10, window_seconds=60))],
+)
 async def create_override(
     payload: OverrideRequest,
     current_user: User = Depends(get_current_user),

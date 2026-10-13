@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from fastapi import status
@@ -11,6 +12,7 @@ from caisse.security import verify_pin, hash_pin, create_access_token, create_re
 from caisse.schemas.auth import LoginResponse, UserResponse, OpenSessionInfo, RefreshTokenResponse, OverrideResponse
 from caisse.services.audit_service import AuditService
 
+logger = logging.getLogger("caisse.security")
 settings = get_settings()
 
 
@@ -36,6 +38,11 @@ class AuthService:
                 break
 
         if not matched_user:
+            logger.warning(
+                "Tentative de connexion par code PIN échouée depuis l'IP %s (poste: %s)",
+                ip or "inconnue",
+                device_id,
+            )
             # Traçabilité tentative infructueuse
             self.audit.log(
                 action="LOGIN_FAILED",

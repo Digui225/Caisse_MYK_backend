@@ -2,10 +2,10 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from caisse.domain.enums import PaymentMethod
-from caisse.schemas.common import BaseSchema
+from caisse.schemas.common import BaseSchema, BaseRequestSchema
 
 
-class PaymentRequest(BaseModel):
+class PaymentRequest(BaseRequestSchema):
     method: PaymentMethod
     amount_xof: int = Field(..., gt=0)
     tendered_xof: int | None = None

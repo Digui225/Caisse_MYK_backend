@@ -117,7 +117,7 @@ def problem_json_response(
 
 async def caisse_exception_handler(request: Request, exc: CaisseException) -> JSONResponse:
     request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
-    return problem_json_response(
+    response = problem_json_response(
         status_code=exc.status_code,
         code=exc.code,
         title=exc.title,
@@ -125,6 +125,9 @@ async def caisse_exception_handler(request: Request, exc: CaisseException) -> JS
         request_id=request_id,
         meta=exc.meta,
     )
+    if exc.code == "RATE_LIMIT_EXCEEDED" and "retry_after" in exc.meta:
+        response.headers["Retry-After"] = str(exc.meta["retry_after"])
+    return response
 
 
 async def validation_exception_handler(

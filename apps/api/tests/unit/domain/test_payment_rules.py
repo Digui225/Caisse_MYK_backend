@@ -106,6 +106,21 @@ def test_format_receipt_text_rendering():
     assert "DUPLICATA" in dup_text
 
 
+def test_format_receipt_text_mobile_money_personalized_labels():
+    text = format_receipt_text(
+        restaurant_info={"name": "MYK TEST RESTO"},
+        order_info={"order_number": "2026-10-13-0001"},
+        items=[{"name": "Bissap", "quantity": 1, "line_total_xof": 2000}],
+        payments=[
+            {"method": "MOBILE_MONEY", "provider": "WAVE", "amount_xof": 1000},
+            {"method": "MOBILE_MONEY", "provider": "ORANGE_MONEY", "amount_xof": 1000},
+        ],
+        totals={"total_ttc_xof": 2000, "total_vat_xof": 0},
+    )
+    assert "Paiement Wave :" in text
+    assert "Paiement Orange Money :" in text
+
+
 def test_sanitize_french_text_removes_accents_and_special_chars():
     from caisse.domain.payment_rules import sanitize_french_text
     sample = "Désignation · Poulet Braisé DG · Tél : +225 · TOTAL RÉGLÉ · À très bientôt !"

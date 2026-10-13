@@ -32,6 +32,12 @@ def disable_hardware_printing_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(PrintingService, "_send_raw_esc_pos", lambda *args, **kwargs: True)
 
 
+@pytest.fixture(autouse=True)
+def reset_rate_limiter_in_tests() -> None:
+    from caisse.security_rate_limit import rate_limiter
+    rate_limiter.reset()
+
+
 @pytest.fixture(scope="function")
 def db_session() -> Generator[Session, None, None]:
     Base.metadata.create_all(bind=test_engine)

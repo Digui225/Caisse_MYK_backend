@@ -7,6 +7,11 @@
       "skillPath": "skills/engineering/code-review/SKILL.md",
       "computedHash": "caa9a086baaf9e0f7cd71f64edfa83da6821c05e826b083221f3d02e3d6a1905"
     },
+    "django-security": {
+      "source": "../../../../tmp/ecc-sparse",
+      "sourceType": "local",
+      "computedHash": "9bb29e8ddc48d8a0ab4ed4c42732586c1b5af8e09340ca58ac759a39f493639f"
+    },
     "fastapi": {
       "source": "fastapi/fastapi",
       "sourceType": "github",
