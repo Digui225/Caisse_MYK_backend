@@ -1,4 +1,6 @@
-from sqlalchemy import Column, DateTime, Float, Integer, JSON, String, func
+from datetime import datetime
+from typing import Any
+from sqlalchemy import DateTime, Float, Integer, JSON, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 from caisse.database import Base
 from caisse.models.base import TimestampMixin, generate_uuid
@@ -24,8 +26,10 @@ class AppSetting(Base):
 
     __tablename__ = "settings"
 
-    key = Column(String(64), primary_key=True)
-    value = Column(JSON, nullable=True)
-    updated_by = Column(String(36), nullable=True)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[Any] = mapped_column(JSON, nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 

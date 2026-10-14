@@ -148,12 +148,20 @@ def main() -> None:
     probe_parser.add_argument("--ht-decimals", type=int, default=4, help="Décimales HT")
     probe_parser.add_argument("--timeout", type=float, default=5.0, help="Timeout en secondes")
     probe_parser.add_argument("--out", default="fne-probe", help="Répertoire de sortie")
-    probe_parser.add_argument("--yes", action="store_true", help="Confirmer la consommation de sticker")
+    # Commande outbox-worker
+    outbox_parser = subparsers.add_parser("outbox-worker", help="Dépiler les événements outbox (FNE, impressions)")
+    outbox_parser.add_argument("--once", action="store_true", help="Exécuter un seul cycle et quitter")
+    outbox_parser.add_argument("--interval", type=float, default=30.0, help="Intervalle entre chaque cycle en secondes")
 
     args = parser.parse_args()
 
     if args.command == "fne-probe":
         cmd_fne_probe(args)
+        return
+
+    if args.command == "outbox-worker":
+        from caisse.infrastructure.outbox.worker import run_outbox_worker_sync
+        run_outbox_worker_sync(once=args.once, interval_seconds=args.interval)
         return
 
     db = SessionLocal()

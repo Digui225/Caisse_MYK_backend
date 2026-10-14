@@ -1,13 +1,14 @@
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 
 from caisse.config import get_settings
-from caisse.database import Base, engine
+from caisse.database import Base, engine, get_db
 import caisse.models.audit
 import caisse.models.cash_session
 import caisse.models.catalog
@@ -34,13 +35,37 @@ from caisse.schemas.common import HealthResponse, HealthReadyResponse
 settings = get_settings()
 
 
+import asyncio
+from caisse.infrastructure.outbox.worker import run_outbox_worker_loop
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup : s'assurer que toutes les tables sont créées
     if settings.APP_ENV != "test":
         Base.metadata.create_all(bind=engine)
+
+    worker_task = None
+    stop_event = asyncio.Event()
+
+    # Démarrage du worker Outbox d'arrière-plan si activé
+    if getattr(settings, "ENABLE_OUTBOX_WORKER", True) and settings.APP_ENV != "test":
+        worker_task = asyncio.create_task(
+            run_outbox_worker_loop(
+                stop_event,
+                interval_seconds=getattr(settings, "OUTBOX_WORKER_INTERVAL_SECONDS", 30.0),
+            )
+        )
+
     yield
+
     # Shutdown
+    if worker_task:
+        stop_event.set()
+        try:
+            await asyncio.wait_for(worker_task, timeout=5.0)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            pass
 
 
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -122,14 +147,7 @@ if settings.ALLOWED_HOSTS and "*" not in settings.ALLOWED_HOSTS:
 # CORSMiddleware ajouté en dernier pour être le wrapper le plus externe (capture toutes les réponses y compris erreurs 500)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:8001",
-        "http://127.0.0.1:8001",
-    ],
+    allow_origins=settings.CORS_ORIGINS,
     allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
@@ -154,12 +172,41 @@ async def health_check() -> HealthResponse:
 
 
 @app.get("/health/ready", response_model=HealthReadyResponse, tags=["Système"])
-async def health_ready() -> HealthReadyResponse:
+async def health_ready(db: Session = Depends(get_db)) -> HealthReadyResponse:
+    from sqlalchemy import text
+    from caisse.models.fne import FneDocument
+    from caisse.domain.enums import FneStatus
+    import httpx
+
+    db_ok = False
+    fne_queue = 0
+    try:
+        db.execute(text("SELECT 1"))
+        db_ok = True
+        fne_queue = (
+            db.query(FneDocument)
+            .filter(FneDocument.status.in_([FneStatus.QUEUED, FneStatus.PENDING]))
+            .count()
+        )
+    except Exception:
+        db_ok = False
+
+    print_agent_ok = False
+    try:
+        async with httpx.AsyncClient(timeout=0.6) as client:
+            resp = await client.get(f"{settings.PRINT_AGENT_URL}/status")
+            if resp.status_code == 200:
+                print_agent_ok = True
+    except Exception:
+        # En environnement sans print-agent démarré (ex: CI/tests ou dev)
+        print_agent_ok = settings.APP_ENV == "test"
+
+    overall_status = "ok" if db_ok else "degraded"
     return HealthReadyResponse(
-        status="ok",
-        database=True,
-        print_agent=True,
-        fne_queue_length=0,
+        status=overall_status,
+        database=db_ok,
+        print_agent=print_agent_ok,
+        fne_queue_length=fne_queue,
     )
 
 

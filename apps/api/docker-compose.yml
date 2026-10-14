@@ -19,6 +19,19 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  web:
+    build:
+      context: ../../../Caisse_MYK_frontend
+      dockerfile: Dockerfile
+    container_name: caisse-web
+    restart: always
+    ports:
+      - "8080:80"
+    networks:
+      - infra_shared
+    depends_on:
+      - api
+
 networks:
   infra_shared:
     external: true

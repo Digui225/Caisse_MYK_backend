@@ -11,8 +11,22 @@ class Settings(BaseSettings):
     PORT: int = 8001
     HOST: str = "0.0.0.0"
     ALLOWED_HOSTS: list[str] = ["localhost", "127.0.0.1", "testserver"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8001",
+        "http://127.0.0.1:8001",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+    ]
     ENABLE_DOCS: bool | None = None
     MAX_REQUEST_BODY_SIZE: int = 2 * 1024 * 1024  # 2 Mo par défaut
+
+    # Outbox & Tâches d'arrière-plan
+    ENABLE_OUTBOX_WORKER: bool = True
+    OUTBOX_WORKER_INTERVAL_SECONDS: float = 30.0
 
     # Base de données PostgreSQL
     DATABASE_URL: str = "postgresql+psycopg://caisse:caisse_secret@localhost:5432/caisse"

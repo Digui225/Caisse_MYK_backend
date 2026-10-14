@@ -21,8 +21,12 @@ COPY src/ ./src/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./
 
+COPY docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
+
 ENV PYTHONPATH=/app/src
 
 EXPOSE 8001
 
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["uvicorn", "caisse.main:app", "--host", "0.0.0.0", "--port", "8001"]

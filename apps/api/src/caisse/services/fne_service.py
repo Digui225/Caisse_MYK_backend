@@ -540,6 +540,10 @@ def retry(
     return doc
 
 
+# Alias de compatibilité
+retry_document = retry
+
+
 def resolve(
     db: Session,
     document_id: str,

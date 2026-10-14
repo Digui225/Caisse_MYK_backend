@@ -9,6 +9,22 @@ ESC_INIT = b"\x1b\x40"
 ESC_DRAWER_KICK = b"\x1b\x70\x00\x19\xfa"
 ESC_CUT_PAPER = b"\x1d\x56\x42\x00"
 
+
+def build_esc_pos_qr(data: str, size: int = 4) -> bytes:
+    """Génère la séquence ESC/POS native GS ( k pour imprimer un QR Code 2D (Modèle 2)."""
+    data_bytes = data.encode("ascii", errors="replace")
+    data_len = len(data_bytes) + 3
+    pL = data_len & 0xFF
+    pH = (data_len >> 8) & 0xFF
+
+    res = bytearray()
+    res.extend(b"\x1d\x28\x6b\x04\x00\x31\x41\x32\x00")          # 1. Modèle 2
+    res.extend(b"\x1d\x28\x6b\x03\x00\x31\x43" + bytes([size]))  # 2. Taille module (dots)
+    res.extend(b"\x1d\x28\x6b\x03\x00\x31\x45\x31")              # 3. Correction d'erreur Niveau M
+    res.extend(b"\x1d\x28\x6b" + bytes([pL, pH]) + b"\x31\x50\x30" + data_bytes)  # 4. Données
+    res.extend(b"\x1d\x28\x6b\x03\x00\x31\x51\x30")              # 5. Impression
+    return bytes(res)
+
 try:
     import win32print  # type: ignore
     HAS_WIN32PRINT = True

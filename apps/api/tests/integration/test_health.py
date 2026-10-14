@@ -4,7 +4,7 @@ from caisse.main import app
 client = TestClient(app)
 
 
-def test_health_endpoint() -> None:
+def test_health_endpoint(client: TestClient) -> None:
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
@@ -12,7 +12,7 @@ def test_health_endpoint() -> None:
     assert "app" in data
 
 
-def test_health_ready_endpoint() -> None:
+def test_health_ready_endpoint(client: TestClient) -> None:
     response = client.get("/health/ready")
     assert response.status_code == 200
     data = response.json()

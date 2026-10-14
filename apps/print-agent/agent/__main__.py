@@ -1,12 +1,13 @@
 import os
 import uvicorn
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
 from pydantic import BaseModel
 
 from agent.spooler_driver import (
     print_job_raw,
     open_drawer_only,
     get_spooler_status,
+    build_esc_pos_qr,
     ESC_INIT,
     ESC_DRAWER_KICK,
     ESC_CUT_PAPER,
@@ -31,6 +32,19 @@ def get_status():
     return get_spooler_status(PRINTER_NAME)
 
 
+@app.post("/print-raw", status_code=status.HTTP_200_OK, summary="Imprimer des octets bruts ESC/POS")
+async def print_raw_endpoint(request: Request):
+    raw_data = await request.body()
+    try:
+        print_job_raw(PRINTER_NAME, raw_data, doc_name="Ticket ESC/POS Direct")
+        return {"status": "PRINTED", "bytes": len(raw_data)}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erreur d'impression brute : {str(exc)}",
+        )
+
+
 @app.post("/print", status_code=status.HTTP_200_OK, summary="Imprimer un ticket")
 def print_receipt(payload: PrintPayload):
     raw = bytearray(ESC_INIT)
@@ -41,7 +55,16 @@ def print_receipt(payload: PrintPayload):
 
     # 2. Contenu texte
     raw.extend(payload.content.encode("cp850", errors="replace"))
-    raw.extend(b"\n\n\n")
+    raw.extend(b"\n")
+
+    # 2b. Impression du QR Code FNE si demandé
+    if payload.qr:
+        raw.extend(b"\x1b\x61\x01")  # Centrer
+        raw.extend(build_esc_pos_qr(payload.qr, size=4))
+        raw.extend(b"\x1b\x61\x00")  # Rétablir alignement à gauche
+        raw.extend(b"\n")
+
+    raw.extend(b"\n\n")
 
     # 3. Coupe papier
     if payload.cut:

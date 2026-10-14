@@ -279,7 +279,15 @@ class PrintingService:
 
         # 2. Sur Windows ou si CUPS échoue : agent d'impression local port 8090
         try:
-            with httpx.Client(timeout=1.0) as client:
+            with httpx.Client(timeout=2.0) as client:
+                res = client.post(
+                    f"{self.agent_url}/print-raw",
+                    content=raw_bytes,
+                    headers={"Content-Type": "application/octet-stream"},
+                )
+                if res.status_code in [200, 201]:
+                    return True
+                # Fallback sur /print avec texte CP850
                 res = client.post(
                     f"{self.agent_url}/print",
                     json={"content": raw_bytes.decode("cp850", errors="replace"), "open_drawer": False, "cut": False},
