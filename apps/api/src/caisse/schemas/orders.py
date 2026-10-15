@@ -24,6 +24,7 @@ class OrderResponse(BaseSchema):
     cash_session_id: str
     table_id: str | None = None
     table_label: str | None = None
+    note_label: str | None = None
     status: Literal["OPEN", "PARTIALLY_PAID", "PAID", "CANCELLED", "REFUNDED"]
     guests_count: int = 1
     total_ttc_xof: int = 0
@@ -40,6 +41,8 @@ class OrderResponse(BaseSchema):
 class OrderCreateRequest(BaseRequestSchema):
     table_id: str | None = None
     guests_count: int = 1
+    note_label: str | None = None
+    allow_multiple: bool | None = False
 
 
 class OrderItemAddRequest(BaseRequestSchema):

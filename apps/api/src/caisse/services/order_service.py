@@ -54,6 +54,7 @@ class OrderService:
             )
 
         table_label = None
+        note_label = payload.note_label
         if payload.table_id:
             table = self.table_repo.get_by_id(payload.table_id)
             if not table:
@@ -65,16 +66,22 @@ class OrderService:
                 )
             table_label = table.label
 
-            # Vérification de l'unicité de la commande active sur la table
-            existing_active_order = self.order_repo.get_active_order_by_table_id(payload.table_id)
-            if existing_active_order:
-                raise CaisseException(
-                    code="TABLE_ALREADY_OCCUPIED",
-                    title="Table déjà occupée",
-                    detail=f"La {table.label} a déjà une commande en cours ({existing_active_order.order_number}).",
-                    status_code=status.HTTP_409_CONFLICT,
-                    meta={"order_id": existing_active_order.id, "order_number": existing_active_order.order_number},
-                )
+            existing_active_orders = self.order_repo.get_active_orders_by_table_id(payload.table_id)
+            if existing_active_orders:
+                if not payload.allow_multiple and not payload.note_label:
+                    existing_active_order = existing_active_orders[0]
+                    raise CaisseException(
+                        code="TABLE_ALREADY_OCCUPIED",
+                        title="Table déjà occupée",
+                        detail=f"La {table.label} a déjà une commande en cours ({existing_active_order.order_number}).",
+                        status_code=status.HTTP_409_CONFLICT,
+                        meta={"order_id": existing_active_order.id, "order_number": existing_active_order.order_number},
+                    )
+                if not note_label:
+                    note_label = f"Note {len(existing_active_orders) + 1}"
+            else:
+                if not note_label:
+                    note_label = "Note 1"
 
         b_date_str = active_session.business_date.isoformat()
         seq_num = self.order_repo.get_next_daily_sequence(b_date_str)
@@ -87,6 +94,7 @@ class OrderService:
             order_number=order_number,
             cash_session_id=active_session.id,
             table_id=payload.table_id,
+            note_label=note_label,
             status="OPEN",
             opened_by_user_id=user_id,
             guests_count=payload.guests_count,
@@ -378,6 +386,7 @@ class OrderService:
             cash_session_id=order.cash_session_id,
             table_id=order.table_id,
             table_label=resolved_table_label,
+            note_label=order.note_label,
             status=order.status,  # type: ignore
             guests_count=order.guests_count,
             total_ttc_xof=order.total_ttc_xof,

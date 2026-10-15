@@ -34,6 +34,19 @@ class TableOrderItemSummary(BaseSchema):
     note: str | None = None
 
 
+class TableActiveOrder(BaseSchema):
+    order_id: str
+    order_number: str
+    note_label: str | None = None
+    total_ttc_xof: int = 0
+    guests_count: int = 1
+    opened_at: str | None = None
+    server_name: str | None = None
+    items_count: int = 0
+    service_step: str | None = None
+    items_summary: list[TableOrderItemSummary] = []
+
+
 class TableBoardItem(BaseSchema):
     id: str
     label: str
@@ -49,6 +62,8 @@ class TableBoardItem(BaseSchema):
     items_count: int | None = None
     service_step: str | None = None
     items_summary: list[TableOrderItemSummary] = []
+    active_orders_count: int = 0
+    active_orders: list[TableActiveOrder] = []
 
 
 class TableBoardResponse(BaseSchema):

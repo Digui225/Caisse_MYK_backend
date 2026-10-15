@@ -23,7 +23,20 @@ class OrderRepository(BaseRepository[Order]):
                 Order.table_id == str(table_id),
                 Order.status.in_(["OPEN", "PARTIALLY_PAID"]),
             )
+            .order_by(Order.opened_at.asc())
             .first()
+        )
+
+    def get_active_orders_by_table_id(self, table_id: str) -> list[Order]:
+        return (
+            self.db.query(Order)
+            .options(joinedload(Order.items), joinedload(Order.opened_by))
+            .filter(
+                Order.table_id == str(table_id),
+                Order.status.in_(["OPEN", "PARTIALLY_PAID"]),
+            )
+            .order_by(Order.opened_at.asc())
+            .all()
         )
 
     def get_next_daily_sequence(self, business_date_str: str) -> int:

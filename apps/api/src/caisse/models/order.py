@@ -14,6 +14,7 @@ class Order(Base, TimestampMixin):
     order_number: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
     cash_session_id: Mapped[str] = mapped_column(String(36), ForeignKey("cash_sessions.id"), nullable=False)
     table_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("restaurant_tables.id"), nullable=True)
+    note_label: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     status: Mapped[str] = mapped_column(String(20), default="OPEN", nullable=False)
     opened_by_user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
@@ -55,6 +56,8 @@ class OrderItem(Base, TimestampMixin):
     order_id: Mapped[str] = mapped_column(String(36), ForeignKey("orders.id"), nullable=False)
     product_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("products.id"), nullable=True)
 
+
+
     # Snapshots figés au moment de l'ajout (immuabilité)
     product_name_snapshot: Mapped[str] = mapped_column(String(150), nullable=False)
     category_snapshot: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -67,10 +70,14 @@ class OrderItem(Base, TimestampMixin):
     added_by_user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 
+
+
     # Traçabilité des retraits (jamais de DELETE physique)
     removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     removed_by_user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
     removal_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
 
     # Relationships
     order: Mapped[Order] = relationship("Order", back_populates="items")
