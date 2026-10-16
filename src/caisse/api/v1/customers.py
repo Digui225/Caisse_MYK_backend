@@ -1,8 +1,10 @@
+import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Path, Query, status
 
 from caisse.deps import Ctx, CurrentUser, DbSession
+from caisse.errors import NotFoundError
 from caisse.repositories import customers as customers_repo
 from caisse.schemas.common import Page
 from caisse.schemas.customers import CustomerCreate, CustomerOut
@@ -27,6 +29,19 @@ def list_customers(
     normalized = ncc.replace(" ", "").upper() if ncc else None
     customers = customers_repo.search(db, text=search, ncc=normalized)
     return Page(items=[CustomerOut.model_validate(c) for c in customers])
+
+
+@router.get("/{customer_id}", response_model=CustomerOut, summary="Détail d'un client")
+def get_customer(
+    customer_id: Annotated[uuid.UUID, Path(description="Identifiant du client")],
+    _: CurrentUser,
+    db: DbSession,
+) -> CustomerOut:
+    """Erreurs : `404 NOT_FOUND`."""
+    customer = customers_repo.get(db, customer_id)
+    if customer is None:
+        raise NotFoundError(meta={"customer_id": str(customer_id)})
+    return CustomerOut.model_validate(customer)
 
 
 @router.post(

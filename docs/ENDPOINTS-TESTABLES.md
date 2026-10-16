@@ -11,6 +11,8 @@ Les fonctions développées sur la branche `aziz` sont reprises ici **sous les r
 | **Gestion du catalogue** | `POST /categories`, `PATCH/DELETE /categories/{id}`, `POST /products`, `GET/PATCH /products/{id}`, `PATCH /products/{id}/price` (motif obligatoire, historisé), `GET /products/{id}/price-history`. Rôle RESPONSABLE. **Chez aziz** : `/catalog/categories`, `/catalog/products`, `/catalog/products/{id}/price` avec `new_price_xof` → ici `/categories`, `/products`, `/products/{id}/price` avec `price_xof`. `GET /categories` accepte `is_active`. | [§4](#4-catalogue) |
 | **Tables** | `POST /tables`, `PATCH/DELETE /tables/{id}` (ADMIN, suppression logique), `GET /tables?is_active=`. **Chez aziz** : `DELETE` renvoie un message → ici la table. | [§5](#5-tables) |
 | **Paramètres et caisses** | `GET/PUT /settings` (lecture : connecté ; modification : ADMIN, seuls les champs envoyés changent) ; `GET/POST /cash-registers`, `PATCH /cash-registers/{id}`. **Chez aziz** : `/settings/registers` et un `DELETE` → ici `/cash-registers` et `PATCH {"is_active": false}`. Champs de `/settings` : mêmes noms que chez aziz pour l'établissement (`restaurant_name`, `ncc`, `rccm`, `address`, `phone`, `receipt_footer`, `default_vat_rate`, `screen_lock_timeout_seconds`), plus les moyens de paiement, les coupures et la FNE ; pas de `print_width` (réglé dans le `.env` de l'API). Ouvrir une session sur une caisse inconnue ou hors service renvoie `404` (avant : erreur 500). | [§13](#13-paramètres-et-caisses) |
+| **Tableau de bord du jour** | `GET /reports/dashboard?business_date=` (RESPONSABLE) : CA, commandes soldées / ouvertes / annulées, panier moyen, couverts, à table / à emporter, tables occupées, encaissements par moyen **et opérateur**, 10 meilleures ventes, ventes par heure et par caissier, sessions, articles en alerte, FNE. **Chez aziz** : paramètre `date` et noms différents (`total_sales_ttc_xof`, `settled_orders`, `payments_by_method`, `hourly_sales`, `sales_by_cashier`…) → voir §12. | [§12](#12-tableaux-de-bord) |
+| **Duplicata du Z, export FNE, client** | `POST /cash-sessions/{id}/z-report/reprint` (**chez aziz** : `POST /cash-sessions/{id}/print-z` ou `/printing/z-report/{id}`) ; `GET /fne/documents/export` en CSV (**chez aziz** : `/fne/export`) ; `GET /customers/{id}`. `POST /fne/generate` (ancien alias chez aziz) n'est pas repris : utiliser `POST /orders/{id}/fne`. | [§6](#6-sessions-de-caisse), [§9](#9-clients-entreprise-et-fne) |
 | **Partage de table** | `POST /orders` accepte `note_label` et `allow_multiple` (mêmes noms que chez aziz) ; `order.note_label` dans toutes les réponses de commande ; `GET /tables/board` ajoute `orders[]` et `total_ttc_xof` par table (**chez aziz** : `active_orders[]`, `is_occupied`) et garde `order` (la plus ancienne). Nouveau code `ORDER_LABEL_TAKEN`. Une table rouverte n'empêche plus d'annuler un paiement (`table_reoccupied` supprimé). | [§5](#5-tables), [§7](#7-commandes) |
 
 ## Nouveautés du 16/10/2026 — stock et tableaux de bord
@@ -72,13 +74,13 @@ Les fonctions développées sur la branche `aziz` sont reprises ici **sous les r
 | 3 | [Utilisateurs](#3-utilisateurs) | `GET /users`, `POST /users`, `PATCH /users/{id}`, `POST /users/{id}/pin` | Gestion des comptes (ADMIN) |
 | 4 | [Catalogue](#4-catalogue) | `GET/POST /categories`, `PATCH/DELETE /categories/{id}`, `GET/POST /products`, `GET/PATCH /products/{id}`, `PATCH /products/{id}/price`, `GET /products/{id}/price-history`, `POST /products/custom` | Menu, gestion du catalogue (RESPONSABLE), prix historisé, article libre |
 | 5 | [Tables](#5-tables) | `GET/POST /tables`, `PATCH/DELETE /tables/{id}`, `GET /tables/board` | Salle (configuration ADMIN), plan de salle avec tables partagées |
-| 6 | [Sessions de caisse](#6-sessions-de-caisse) | `GET /cash-sessions/current`, `POST /cash-sessions`, `GET …/{id}/x-report`, `POST …/{id}/close`, `GET …/{id}/z-report`, `GET /cash-sessions`, `POST …/{id}/movements` | Ouverture, mouvements de tiroir, rapports X et Z, clôture |
+| 6 | [Sessions de caisse](#6-sessions-de-caisse) | `GET /cash-sessions/current`, `POST /cash-sessions`, `GET …/{id}/x-report`, `POST …/{id}/close`, `GET …/{id}/z-report`, `POST …/{id}/z-report/reprint`, `GET /cash-sessions`, `POST …/{id}/movements` | Ouverture, mouvements de tiroir, rapports X et Z, clôture, duplicata du Z |
 | 7 | [Commandes](#7-commandes) | `POST /orders`, `GET /orders`, `GET /orders/{id}`, `POST …/{id}/items`, `PATCH …/items/{item_id}`, `DELETE …/items/{item_id}`, `POST …/{id}/cancel` | Prise de commande, lignes (ajout, quantité, retrait), annulation sous autorisation |
 | 8 | [Paiements](#8-paiements) | `GET /payment-methods`, `POST /orders/{id}/payments`, `DELETE /orders/{id}/payments/{payment_id}` | Encaissement partiel ou mixte, rendu monnaie, annulation d'un paiement |
-| 9 | [Clients entreprise et FNE](#9-clients-entreprise-et-fne) | `GET/POST /customers`, `POST/GET /orders/{id}/fne`, `GET /fne/documents`, `POST …/{id}/retry`, `POST …/{id}/resolve`, `POST …/{id}/refund`, `GET …/{id}/duplicate`, `GET /fne/pending-count`, `GET /fne/daily-summary` | Facture normalisée DGI à la demande, avoirs, suivi |
+| 9 | [Clients entreprise et FNE](#9-clients-entreprise-et-fne) | `GET/POST /customers`, `GET /customers/{id}`, `POST/GET /orders/{id}/fne`, `GET /fne/documents`, `GET /fne/documents/export`, `POST …/{id}/retry`, `POST …/{id}/resolve`, `POST …/{id}/refund`, `GET …/{id}/duplicate`, `GET /fne/pending-count`, `GET /fne/daily-summary` | Facture normalisée DGI à la demande, avoirs, suivi |
 | 10 | [Impression](#10-impression) | `GET /printing/status`, `POST /printing/open-drawer`, `GET /printing/jobs`, `POST …/{id}/retry`, `POST /printing/test` | État de l'agent et de la file, actions directes |
 | 11 | [Stock](#11-stock) | `GET/POST /stock/articles`, `GET/PATCH /stock/articles/{id}`, `POST /stock/receipts`, `POST /stock/losses`, `POST /stock/counts`, `GET /stock/movements`, `GET/PUT /products/{id}/components` | Articles, entrées, pertes, inventaires, fiches techniques (RESPONSABLE) |
-| 12 | [Tableaux de bord](#12-tableaux-de-bord) | `GET /reports/sales`, `GET /reports/stock` | Ventes et stock sur une période (ADMIN) |
+| 12 | [Tableaux de bord](#12-tableaux-de-bord) | `GET /reports/dashboard`, `GET /reports/sales`, `GET /reports/stock` | Journée en cours (RESPONSABLE) ; ventes et stock sur une période (ADMIN) |
 | 13 | [Paramètres et caisses](#13-paramètres-et-caisses) | `GET/PUT /settings`, `GET/POST /cash-registers`, `PATCH /cash-registers/{id}` | Établissement, ticket, TVA, moyens de paiement, FNE ; caisses (ADMIN) |
 | 14 | [Scénario de test complet](#14-scénario-de-test-complet-curl--jq) | — | Tout le parcours en curl, de la connexion à la clôture |
 | 15 | [Pas encore testable](#15-pas-encore-testable) | — | Routes du contrat pas encore implémentées |
@@ -949,6 +951,16 @@ Réponse `200` : `ZReportOut`, identique à la réponse de clôture, relue depui
 | `404 NOT_FOUND` | Session inconnue |
 | `409 SESSION_NOT_CLOSED` | La session n'est pas encore clôturée |
 
+### `POST /cash-sessions/{id}/z-report/reprint` — ré-imprimer le ticket Z
+
+**Accès** : connecté. Duplicata du ticket Z **tel qu'imprimé à la clôture** (jamais recalculé), marqué `is_reprint: true`. Il n'ouvre pas le tiroir et est compté dans les ré-impressions. Réponse `200` : le travail d'impression (format de `GET /printing/jobs`, §10). Une panne d'imprimante ne fait pas échouer la requête : lire `status`.
+
+| Code | Cas |
+|---|---|
+| `404 NOT_FOUND` | Session inconnue |
+| `409 SESSION_NOT_CLOSED` | Session pas encore clôturée |
+| `409 NO_RECEIPT_TO_REPRINT` | Session clôturée sans ticket Z enregistré |
+
 ### `GET /cash-sessions` — historique
 
 **Accès : RESPONSABLE**, sinon `403 INSUFFICIENT_PRIVILEGE`.
@@ -1479,6 +1491,10 @@ Rôle : CAISSIER. `search` cherche dans la raison sociale et le NCC ; `ncc` filt
 }
 ```
 
+### `GET /customers/{id}` — détail d'un client
+
+**Accès** : connecté. Réponse `200` : le client (format de `GET /customers`). `404 NOT_FOUND` si inconnu.
+
 ### `POST /customers` — créer un client entreprise
 
 ```json
@@ -1572,6 +1588,12 @@ Réponse `201` : le document d'avoir (`type: "REFUND"`, `parent_document_id`), m
 ### `GET /fne/documents/{id}/duplicate` — duplicata
 
 Rôle : CAISSIER. Le document certifié ; `qr_payload` ouvre la page A4 de la DGI à imprimer. `409 FNE_DOCUMENT_STATE` (`not_certified`) sinon.
+
+### `GET /fne/documents/export?status=&date_from=&date_to=` — export CSV
+
+**Accès** : RESPONSABLE. Fichier CSV pour Excel (séparateur `;`, UTF-8 avec BOM, `Content-Disposition: attachment; filename="fne-<date>.csv"`), un document par ligne, du plus ancien au plus récent. Les filtres sont facultatifs ; `date_from`/`date_to` portent sur la journée comptable de la commande.
+
+Colonnes : `cree_le`, `journee`, `commande`, `type` (`FNE`/`REFUND`), `statut`, `incertain` (`oui`/`non`), `numero_fne`, `client`, `ncc`, `montant_ttc_xof`, `certifie_le`, `derniere_erreur`.
 
 ### `GET /fne/pending-count` — compteur de la barre d'état
 
@@ -1828,9 +1850,39 @@ Trace dans `audit_logs` : `stock.article_create`, `stock.article_update`, `stock
 
 ## 12. Tableaux de bord
 
-Préfixe : `/api/v1/reports`. **Accès** : ADMIN (M. Yapi). Lecture seule.
+Préfixe : `/api/v1/reports`. Lecture seule. **Accès** : tableau du jour pour le RESPONSABLE, tableaux de ventes et de stock pour l'ADMIN (M. Yapi).
 
-Paramètres des deux routes : `date_from` et `date_to` (journées comptables incluses). Sans `date_to` : la journée en cours (session ouverte, sinon aujourd'hui) ; sans `date_from` : égale à `date_to`. Période de 366 jours au plus.
+### `GET /reports/dashboard?business_date=` — tableau de bord du jour
+
+**Accès** : RESPONSABLE. `business_date` facultatif : par défaut, la journée en cours (session ouverte, sinon aujourd'hui).
+
+```json
+{
+  "business_date": "2026-10-16",
+  "revenue_xof": 9000, "orders_paid": 2, "orders_open": 1, "orders_cancelled": 1,
+  "average_ticket_xof": 4500, "guests_count": 2, "dine_in_orders": 1, "takeaway_orders": 1,
+  "tables_occupied": 1, "tables_total": 15,
+  "payments": [ { "method": "MOBILE_MONEY", "provider": "WAVE", "count": 1, "amount_xof": 7000 },
+                { "method": "CASH", "provider": null, "count": 1, "amount_xof": 2000 } ],
+  "top_products": [ { "product_id": "…", "name": "Poisson braisé", "quantity": 2, "revenue_xof": 7000 } ],
+  "hourly": [ { "hour": 12, "orders_count": 2, "revenue_xof": 9000 } ],
+  "by_cashier": [ { "user_id": "…", "full_name": "Awa Koné", "orders_count": 2, "revenue_xof": 9000 } ],
+  "sessions": [ { "id": "…", "cash_register": "Caisse 1", "status": "OPEN", "opened_by": "Awa Koné",
+                  "opened_at": "2026-10-16T07:58:00Z", "closed_at": null, "z_number": null,
+                  "variance_xof": null } ],
+  "low_stock_articles": 3,
+  "fne": { "certified": 0, "pending": 0 }
+}
+```
+
+- Chiffre d'affaires, panier moyen, couverts, à table / à emporter, moyens de paiement, meilleures ventes, heures et caissiers : sur les commandes **soldées** de la journée.
+- `hourly` : heure d'encaissement (Abidjan est à UTC), seulement les heures avec des ventes. `by_cashier` : la personne qui a **soldé** la commande.
+- `tables_occupied` et `low_stock_articles` décrivent l'état **actuel**, quelle que soit la journée demandée.
+- `403 INSUFFICIENT_PRIVILEGE` si l'utilisateur n'est pas RESPONSABLE.
+
+### Tableaux de ventes et de stock
+
+**Accès** : ADMIN (M. Yapi). Paramètres des deux routes : `date_from` et `date_to` (journées comptables incluses). Sans `date_to` : la journée en cours (session ouverte, sinon aujourd'hui) ; sans `date_from` : égale à `date_to`. Période de 366 jours au plus.
 
 | Code | Cas |
 |---|---|
@@ -2142,4 +2194,4 @@ docker exec infra-db sh -c 'psql -U "$POSTGRES_USER" -d caisse -c \
 |---|---|
 | L4 | `POST /orders/{id}/refunds` (remboursement d'une commande soldée, reporté : rare au restaurant) |
 | L6 | `GET /fne/daily-summary/{id}/export` (export du récapitulatif figé à la clôture), worker de renvoi automatique (le renvoi FNE/impression reste manuel pour l'instant) |
-| L5–L6 | `GET /reports/dashboard`, `GET /reports/audit` (les tableaux ventes et stock sont là : §12) |
+| L5–L6 | `GET /reports/audit` (les tableaux du jour, des ventes et du stock sont là : §12) |

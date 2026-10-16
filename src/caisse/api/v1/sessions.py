@@ -9,6 +9,7 @@ from caisse.errors import NoOpenSessionError
 from caisse.idempotency import IdempotencyKey
 from caisse.repositories import sessions as sessions_repo
 from caisse.schemas.common import Page
+from caisse.schemas.printing import PrintJobOut
 from caisse.schemas.sessions import (
     CashSessionOut,
     CloseSessionIn,
@@ -160,6 +161,25 @@ def close_session(
 def z_report(session_id: SessionId, _: CurrentUser, db: DbSession) -> ZReportOut:
     """Erreurs : `404 NOT_FOUND`, `409 SESSION_NOT_CLOSED`."""
     return cash_session_service.z_report(db, session_id)
+
+
+@router.post(
+    "/{session_id}/z-report/reprint",
+    response_model=PrintJobOut,
+    summary="Ré-imprimer le ticket Z",
+)
+def reprint_z(
+    session_id: SessionId, user: CurrentUser, db: DbSession, ctx: Ctx, agent: PrintAgentDep
+) -> PrintJobOut:
+    """Duplicata du ticket Z tel qu'imprimé à la clôture (jamais recalculé), marqué
+    `is_reprint: true` ; n'ouvre pas le tiroir. Une panne d'imprimante ne fait pas échouer
+    la requête : lire `status` (`FAILED`, `QUEUED`), rejouer par `/printing/jobs/{id}/retry`.
+
+    Erreurs : `404 NOT_FOUND`, `409 SESSION_NOT_CLOSED`, `409 NO_RECEIPT_TO_REPRINT`
+    (session clôturée sans ticket Z enregistré).
+    """
+    job = cash_session_service.reprint_z(db, session_id, agent=agent, user_id=user.id, ctx=ctx)
+    return PrintJobOut.model_validate(job)
 
 
 @router.get("", response_model=Page[CashSessionOut], summary="Historique des sessions")

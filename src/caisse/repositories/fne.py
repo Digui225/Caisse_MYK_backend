@@ -11,6 +11,7 @@ from caisse.domain.enums import (
     PaymentMethod,
     PaymentStatus,
 )
+from caisse.models.customer import Customer
 from caisse.models.fne import FneDocument
 from caisse.models.order import Order, OrderItem
 from caisse.models.payment import Payment
@@ -56,6 +57,26 @@ def list_documents(
             Order.business_date == business_date
         )
     return list(db.scalars(stmt))
+
+
+def export_rows(
+    db: Session, *, status: FneStatus | None, date_from: date | None, date_to: date | None
+) -> list[tuple[FneDocument, Order | None, Customer | None]]:
+    """Documents avec leur commande et leur client, par date de création ; journée de la
+    commande pour le filtre de période."""
+    stmt = (
+        select(FneDocument, Order, Customer)
+        .outerjoin(Order, Order.id == FneDocument.order_id)
+        .outerjoin(Customer, Customer.id == FneDocument.customer_id)
+        .order_by(FneDocument.created_at, FneDocument.id)
+    )
+    if status is not None:
+        stmt = stmt.where(FneDocument.status == status)
+    if date_from is not None:
+        stmt = stmt.where(Order.business_date >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(Order.business_date <= date_to)
+    return [(doc, order, customer) for doc, order, customer in db.execute(stmt)]
 
 
 def pending_counts(db: Session) -> tuple[int, int, int]:

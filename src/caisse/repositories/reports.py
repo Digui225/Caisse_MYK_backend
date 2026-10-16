@@ -8,16 +8,19 @@ from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
 from caisse.domain.enums import (
+    ACTIVE_ORDER_STATUSES,
     OrderStatus,
     PaymentMethod,
     PaymentStatus,
     StockMovementType,
     StockOutMode,
 )
-from caisse.models.cash_session import CashSession
+from caisse.models.cash_session import CashRegister, CashSession
 from caisse.models.order import Order, OrderItem
 from caisse.models.payment import Payment
 from caisse.models.stock import StockArticle, StockMovement
+from caisse.models.table import RestaurantTable
+from caisse.models.user import User
 from caisse.repositories.stock import SALE_TYPES
 
 # sorties hors ventes : ce qui disparaît du stock sans passer par la caisse
@@ -180,3 +183,86 @@ def last_count_dates(db: Session, day: date) -> dict[uuid.UUID, date]:
         .group_by(StockMovement.article_id)
     )
     return {aid: d for aid, d in rows}
+
+
+# --- Tableau de bord du jour -------------------------------------------------------------
+
+
+def day_orders(db: Session, day: date) -> tuple[int, int, int, int, int, int, int]:
+    """(soldées, CA, couverts, à table, à emporter, ouvertes, annulées) de la journée."""
+    paid = Order.status == OrderStatus.PAID
+    row = db.execute(
+        select(
+            func.count().filter(paid),
+            func.coalesce(func.sum(Order.total_ttc_xof).filter(paid), 0),
+            func.coalesce(func.sum(Order.guests_count).filter(paid), 0),
+            func.count().filter(paid & Order.table_id.is_not(None)),
+            func.count().filter(paid & Order.table_id.is_(None)),
+            func.count().filter(Order.status.in_(ACTIVE_ORDER_STATUSES)),
+            func.count().filter(Order.status == OrderStatus.CANCELLED),
+        ).where(Order.business_date == day)
+    ).one()
+    return tuple(int(v) for v in row)  # type: ignore[return-value]
+
+
+def tables_occupancy(db: Session) -> tuple[int, int]:
+    """(tables en service qui portent une commande active, tables en service)."""
+    occupied = db.scalar(
+        select(func.count(func.distinct(Order.table_id)))
+        .join(RestaurantTable, RestaurantTable.id == Order.table_id)
+        .where(Order.status.in_(ACTIVE_ORDER_STATUSES), RestaurantTable.is_active.is_(True))
+    )
+    total = db.scalar(
+        select(func.count()).select_from(RestaurantTable).where(RestaurantTable.is_active.is_(True))
+    )
+    return int(occupied or 0), int(total or 0)
+
+
+def payments_by_method_provider(
+    db: Session, day: date
+) -> list[tuple[PaymentMethod, str | None, int, int]]:
+    rows = db.execute(
+        select(
+            Payment.method, Payment.provider, func.count(Payment.id), func.sum(Payment.amount_xof)
+        )
+        .join(Order, Order.id == Payment.order_id)
+        .where(Payment.status == PaymentStatus.CAPTURED, _paid_in(day, day))
+        .group_by(Payment.method, Payment.provider)
+        .order_by(func.sum(Payment.amount_xof).desc())
+    )
+    return [(m, p, int(n), int(total or 0)) for m, p, n, total in rows]
+
+
+def sales_by_hour(db: Session, day: date) -> list[tuple[int, int, int]]:
+    """(heure d'encaissement, commandes, CA) ; Abidjan est à UTC."""
+    hour = func.extract("hour", func.timezone("UTC", Order.paid_at))
+    rows = db.execute(
+        select(hour, func.count(Order.id), func.sum(Order.total_ttc_xof))
+        .where(_paid_in(day, day))
+        .group_by(hour)
+        .order_by(hour)
+    )
+    return [(int(h), int(n), int(total or 0)) for h, n, total in rows]
+
+
+def sales_by_closer(db: Session, day: date) -> list[tuple[uuid.UUID, str, int, int]]:
+    rows = db.execute(
+        select(User.id, User.full_name, func.count(Order.id), func.sum(Order.total_ttc_xof))
+        .join(User, User.id == Order.closed_by_user_id)
+        .where(_paid_in(day, day))
+        .group_by(User.id, User.full_name)
+        .order_by(func.sum(Order.total_ttc_xof).desc())
+    )
+    return [(uid, name, int(n), int(total or 0)) for uid, name, n, total in rows]
+
+
+def day_sessions(db: Session, day: date) -> list[tuple[CashSession, str, str]]:
+    """Sessions de la journée avec le nom de la caisse et de qui l'a ouverte."""
+    rows = db.execute(
+        select(CashSession, CashRegister.name, User.full_name)
+        .join(CashRegister, CashRegister.id == CashSession.cash_register_id)
+        .join(User, User.id == CashSession.opened_by_user_id)
+        .where(CashSession.business_date == day)
+        .order_by(CashSession.opened_at)
+    )
+    return [(s, register, opener) for s, register, opener in rows]

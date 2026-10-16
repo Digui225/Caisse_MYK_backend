@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import Field
 
@@ -138,3 +138,70 @@ class StockReportOut(Schema):
     date_to: date = Field(description="Dernière journée incluse")
     totals: StockTotals
     articles: list[StockReportArticle] = Field(description="Par famille puis par nom")
+
+
+# --- Tableau de bord du jour -------------------------------------------------------------
+
+
+class DashboardPayment(Schema):
+    method: PaymentMethod = Field(description="Moyen de paiement")
+    provider: str | None = Field(description="Opérateur Mobile Money (WAVE, ORANGE…), sinon null")
+    count: int = Field(description="Nombre de paiements")
+    amount_xof: int = Field(description="Montant encaissé")
+
+
+class DashboardProduct(Schema):
+    product_id: uuid.UUID = Field(description="Produit")
+    name: str = Field(description="Nom à la vente")
+    quantity: int = Field(description="Quantité vendue")
+    revenue_xof: int = Field(description="Chiffre d'affaires")
+
+
+class DashboardHour(Schema):
+    hour: int = Field(description="Heure d'encaissement (0 à 23, heure d'Abidjan)")
+    orders_count: int = Field(description="Commandes soldées dans l'heure")
+    revenue_xof: int = Field(description="Chiffre d'affaires de l'heure")
+
+
+class DashboardCashier(Schema):
+    user_id: uuid.UUID = Field(description="Utilisateur qui a soldé les commandes")
+    full_name: str = Field(description="Nom")
+    orders_count: int = Field(description="Commandes soldées")
+    revenue_xof: int = Field(description="Chiffre d'affaires")
+
+
+class DashboardSession(Schema):
+    id: uuid.UUID = Field(description="Session de caisse")
+    cash_register: str = Field(description="Nom de la caisse")
+    status: CashSessionStatus = Field(description="OPEN, CLOSING ou CLOSED")
+    opened_by: str = Field(description="Ouverte par")
+    opened_at: datetime = Field(description="Ouverture")
+    closed_at: datetime | None = Field(description="Clôture (Z)")
+    z_number: int | None = Field(description="Numéro du Z")
+    variance_xof: int | None = Field(description="Écart de caisse à la clôture")
+
+
+class DashboardFne(Schema):
+    certified: int = Field(description="Commandes de la journée avec une FNE certifiée")
+    pending: int = Field(description="Documents FNE de la journée encore en attente")
+
+
+class DashboardOut(Schema):
+    business_date: date = Field(description="Journée comptable")
+    revenue_xof: int = Field(description="Chiffre d'affaires des commandes soldées")
+    orders_paid: int = Field(description="Commandes soldées")
+    orders_open: int = Field(description="Commandes encore ouvertes (OPEN, PARTIALLY_PAID)")
+    orders_cancelled: int = Field(description="Commandes annulées")
+    average_ticket_xof: int = Field(description="Panier moyen")
+    guests_count: int = Field(description="Couverts des commandes soldées (quand saisis)")
+    dine_in_orders: int = Field(description="Commandes soldées servies à table")
+    takeaway_orders: int = Field(description="Commandes soldées à emporter")
+    tables_occupied: int = Field(description="Tables qui portent une commande active")
+    tables_total: int = Field(description="Tables en service")
+    payments: list[DashboardPayment] = Field(description="Encaissements par moyen et opérateur")
+    top_products: list[DashboardProduct] = Field(description="10 meilleures ventes (CA)")
+    hourly: list[DashboardHour] = Field(description="Heures avec des encaissements")
+    by_cashier: list[DashboardCashier] = Field(description="Ventes par personne qui a encaissé")
+    sessions: list[DashboardSession] = Field(description="Sessions de caisse de la journée")
+    low_stock_articles: int = Field(description="Articles de stock en alerte (aujourd'hui)")
+    fne: DashboardFne = Field(description="Factures normalisées de la journée")

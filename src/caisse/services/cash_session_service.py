@@ -10,6 +10,7 @@ from caisse.domain.ports import Printer
 from caisse.errors import (
     BusinessDateMismatchError,
     NoOpenSessionError,
+    NoReceiptToReprintError,
     NotFoundError,
     SessionAlreadyClosedError,
     SessionAlreadyOpenError,
@@ -17,6 +18,7 @@ from caisse.errors import (
     SessionNotClosedError,
 )
 from caisse.models.cash_session import CashMovement, CashRegister, CashSession
+from caisse.models.print_job import PrintJob
 from caisse.repositories import sessions as sessions_repo
 from caisse.repositories import settings as settings_repo
 from caisse.schemas.sessions import (
@@ -266,3 +268,31 @@ def add_movement(
     )
     db.commit()
     return movement
+
+
+def reprint_z(
+    db: Session, session_id: uuid.UUID, *, agent: Printer, user_id: uuid.UUID, ctx: RequestContext
+) -> PrintJob:
+    """Duplicata du ticket Z **tel qu'imprimé à la clôture** (contenu stocké, jamais recalculé),
+    marqué ré-impression et compté dans les contrôles."""
+    session = sessions_repo.get(db, session_id)
+    if session is None:
+        raise NotFoundError(meta={"session_id": str(session_id)})
+    if session.status != CashSessionStatus.CLOSED:
+        raise SessionNotClosedError(meta={"session_id": str(session_id)})
+    previous = db.get(PrintJob, session.print_job_id) if session.print_job_id else None
+    if previous is None or not previous.rendered:
+        raise NoReceiptToReprintError(meta={"session_id": str(session_id)})
+    job, _ = printing_service.create_and_print(
+        db,
+        job_type=PrintJobType.Z_REPORT,
+        agent=agent,
+        rendered=previous.rendered,
+        open_drawer=False,
+        session_id=session.id,
+        payload=previous.payload,
+        is_reprint=True,
+        user_id=user_id,
+        ctx=ctx,
+    )
+    return job

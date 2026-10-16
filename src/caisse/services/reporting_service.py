@@ -15,9 +15,17 @@ from sqlalchemy.orm import Session
 from caisse.domain import stock_rules
 from caisse.domain.enums import StockMovementType, StockOutMode
 from caisse.errors import ValidationError
+from caisse.repositories import fne as fne_repo
 from caisse.repositories import reports as reports_repo
 from caisse.repositories import stock as stock_repo
 from caisse.schemas.reports import (
+    DashboardCashier,
+    DashboardFne,
+    DashboardHour,
+    DashboardOut,
+    DashboardPayment,
+    DashboardProduct,
+    DashboardSession,
     SalesCashSession,
     SalesCategory,
     SalesDay,
@@ -224,4 +232,64 @@ def stock_report(db: Session, date_from: date, date_to: date) -> StockReportOut:
             low_count=int(totals["low"]),
         ),
         articles=rows,
+    )
+
+
+def dashboard(db: Session, day: date) -> DashboardOut:
+    """Tableau de bord de la journée (responsable) : activité, tables, encaissements,
+    meilleures ventes, heures, caissiers, sessions, alertes de stock, FNE."""
+    paid, revenue, guests, dine_in, takeaway, open_orders, cancelled = reports_repo.day_orders(
+        db, day
+    )
+    occupied, tables_total = reports_repo.tables_occupancy(db)
+    top = sorted(reports_repo.sales_by_product(db, day, day), key=lambda r: (-r[4], r[1]))[:10]
+    low = sum(
+        1
+        for a in stock_repo.list_articles(db)
+        if stock_rules.is_below_threshold(a.quantity, a.alert_threshold)
+    )
+    certified, _ = fne_repo.certified_orders_totals(db, day)
+    return DashboardOut(
+        business_date=day,
+        revenue_xof=revenue,
+        orders_paid=paid,
+        orders_open=open_orders,
+        orders_cancelled=cancelled,
+        average_ticket_xof=round(revenue / paid) if paid else 0,
+        guests_count=guests,
+        dine_in_orders=dine_in,
+        takeaway_orders=takeaway,
+        tables_occupied=occupied,
+        tables_total=tables_total,
+        payments=[
+            DashboardPayment(method=m, provider=p, count=n, amount_xof=amount)
+            for m, p, n, amount in reports_repo.payments_by_method_provider(db, day)
+        ],
+        top_products=[
+            DashboardProduct(product_id=pid, name=name, quantity=qty, revenue_xof=total)
+            for pid, name, _, qty, total in top
+        ],
+        hourly=[
+            DashboardHour(hour=h, orders_count=n, revenue_xof=total)
+            for h, n, total in reports_repo.sales_by_hour(db, day)
+        ],
+        by_cashier=[
+            DashboardCashier(user_id=uid, full_name=name, orders_count=n, revenue_xof=total)
+            for uid, name, n, total in reports_repo.sales_by_closer(db, day)
+        ],
+        sessions=[
+            DashboardSession(
+                id=s.id,
+                cash_register=register,
+                status=s.status,
+                opened_by=opener,
+                opened_at=s.opened_at,
+                closed_at=s.closed_at,
+                z_number=s.z_number,
+                variance_xof=s.variance_xof,
+            )
+            for s, register, opener in reports_repo.day_sessions(db, day)
+        ],
+        low_stock_articles=low,
+        fne=DashboardFne(certified=certified, pending=fne_repo.pending_for_date(db, day)),
     )

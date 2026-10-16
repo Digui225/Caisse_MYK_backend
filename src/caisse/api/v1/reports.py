@@ -3,8 +3,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from caisse.deps import Admin, DbSession
-from caisse.schemas.reports import SalesReportOut, StockReportOut
+from caisse.deps import Admin, DbSession, Responsable
+from caisse.schemas.reports import DashboardOut, SalesReportOut, StockReportOut
 from caisse.services import reporting_service, stock_service
 
 router = APIRouter(prefix="/reports", tags=["Rapports"])
@@ -20,6 +20,21 @@ DateTo = Annotated[
 def _period(db: DbSession, date_from: date | None, date_to: date | None) -> tuple[date, date]:
     end = date_to or stock_service.business_day(db)
     return date_from or end, end
+
+
+@router.get("/dashboard", response_model=DashboardOut, summary="Tableau de bord du jour")
+def dashboard(
+    _: Responsable,
+    db: DbSession,
+    business_date: Annotated[
+        date | None, Query(description="Journée comptable ; défaut : journée en cours")
+    ] = None,
+) -> DashboardOut:
+    """Une journée en un appel : chiffre d'affaires, commandes (soldées, ouvertes, annulées),
+    panier moyen, couverts, à table / à emporter, tables occupées, encaissements par moyen et
+    opérateur, 10 meilleures ventes, ventes par heure et par personne qui a encaissé, sessions
+    de caisse, articles de stock en alerte, FNE. Réservé au RESPONSABLE."""
+    return reporting_service.dashboard(db, business_date or stock_service.business_day(db))
 
 
 @router.get("/sales", response_model=SalesReportOut, summary="Tableau des ventes")

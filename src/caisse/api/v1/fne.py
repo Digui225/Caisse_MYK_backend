@@ -1,3 +1,5 @@
+import csv
+import io
 import uuid
 from datetime import date
 from typing import Annotated
@@ -97,6 +99,69 @@ def list_documents(
     """200 documents au plus, les plus récents en premier."""
     docs = fne_repo.list_documents(db, status=status_filter, business_date=business_date)
     return Page(items=fne_service.to_out_many(db, docs))
+
+
+EXPORT_COLUMNS = [
+    "cree_le",
+    "journee",
+    "commande",
+    "type",
+    "statut",
+    "incertain",
+    "numero_fne",
+    "client",
+    "ncc",
+    "montant_ttc_xof",
+    "certifie_le",
+    "derniere_erreur",
+]
+
+
+@router.get(
+    "/fne/documents/export",
+    response_class=Response,
+    summary="Exporter les documents FNE (CSV)",
+    responses={200: {"content": {"text/csv": {}}, "description": "Fichier CSV"}},
+)
+def export_documents(
+    _: Responsable,
+    db: DbSession,
+    status_filter: Annotated[
+        FneStatus | None, Query(alias="status", description="Filtrer sur un statut")
+    ] = None,
+    date_from: Annotated[date | None, Query(description="Journée de début (incluse)")] = None,
+    date_to: Annotated[date | None, Query(description="Journée de fin (incluse)")] = None,
+) -> Response:
+    """CSV pour Excel (séparateur `;`, UTF-8 avec BOM), un document par ligne, du plus ancien
+    au plus récent ; journées = journées comptables des commandes. Réservé au RESPONSABLE."""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
+    writer.writerow(EXPORT_COLUMNS)
+    for doc, order, customer in fne_repo.export_rows(
+        db, status=status_filter, date_from=date_from, date_to=date_to
+    ):
+        writer.writerow(
+            [
+                doc.created_at.isoformat(timespec="seconds"),
+                order.business_date.isoformat() if order else "",
+                order.order_number if order else "",
+                doc.type,
+                doc.status,
+                "oui" if doc.is_uncertain else "non",
+                doc.external_number or "",
+                customer.company_name if customer else "",
+                customer.ncc or "" if customer else "",
+                doc.fne_amount_ttc_xof if doc.fne_amount_ttc_xof is not None else "",
+                doc.certified_at.isoformat(timespec="seconds") if doc.certified_at else "",
+                (doc.last_error or "").replace("\n", " ")[:200],
+            ]
+        )
+    stamp = (date_to or date_from or utcnow().date()).isoformat()
+    return Response(
+        content="\ufeff" + buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="fne-{stamp}.csv"'},
+    )
 
 
 @router.post(
