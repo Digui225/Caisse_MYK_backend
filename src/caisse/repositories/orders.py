@@ -17,9 +17,14 @@ def get_for_update(db: Session, order_id: uuid.UUID) -> Order | None:
     return db.scalar(select(Order).where(Order.id == order_id).with_for_update())
 
 
-def active_for_table(db: Session, table_id: uuid.UUID) -> Order | None:
-    return db.scalar(
-        select(Order).where(Order.table_id == table_id, Order.status.in_(ACTIVE_ORDER_STATUSES))
+def active_for_table(db: Session, table_id: uuid.UUID) -> list[Order]:
+    """Commandes actives d'une table (partage de table), de la plus ancienne à la plus récente."""
+    return list(
+        db.scalars(
+            select(Order)
+            .where(Order.table_id == table_id, Order.status.in_(ACTIVE_ORDER_STATUSES))
+            .order_by(Order.opened_at, Order.id)
+        )
     )
 
 

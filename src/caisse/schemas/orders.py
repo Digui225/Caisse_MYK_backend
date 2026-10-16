@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_validator
 
 from caisse.domain.enums import OrderStatus
 from caisse.schemas.common import ApiWarning, Schema
@@ -18,6 +18,22 @@ class OrderCreate(Schema):
         default=None, description="Table servie ; null pour une vente à emporter (comptoir)"
     )
     guests_count: int | None = Field(default=None, ge=1, le=99, description="Nombre de couverts")
+    note_label: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=50,
+        description="Étiquette de la commande sur la table (« Groupe Koné ») ; défaut : "
+        "« Note n ». Sur une table occupée, en donner une ouvre une commande de plus",
+    )
+    allow_multiple: bool = Field(
+        default=False,
+        description="Table occupée : true ouvre une commande de plus au lieu de refuser",
+    )
+
+    @field_validator("note_label", mode="before")
+    @classmethod
+    def _strip_label(cls, value: object) -> object:
+        return value.strip() or None if isinstance(value, str) else value
 
 
 class ItemAdd(Schema):
@@ -66,6 +82,9 @@ class OrderSummaryOut(Schema):
         description="« Comptoir n° X » d'une vente à emporter ; null pour une table"
     )
     guests_count: int | None = Field(description="Nombre de couverts")
+    note_label: str | None = Field(
+        description="Étiquette sur la table (« Note 1 »…) ; null pour une vente à emporter"
+    )
     total_ttc_xof: int = Field(description="Total TTC, en XOF")
     total_ht_xof: int = Field(description="Total HT, en XOF")
     total_vat_xof: int = Field(description="TVA, en XOF")

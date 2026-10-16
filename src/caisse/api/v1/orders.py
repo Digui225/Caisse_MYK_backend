@@ -42,11 +42,22 @@ def create_order(body: OrderCreate, user: CurrentUser, db: DbSession, ctx: Ctx) 
     """Sur une table (`table_id`) ou à emporter (`table_id: null` → `counter_number` attribué).
     La commande est rattachée à la session de caisse ouverte.
 
+    Partage de table : une table occupée refuse une nouvelle commande, sauf avec
+    `allow_multiple: true` ou une `note_label`. Chaque commande d'une table porte une
+    étiquette (`note_label`, défaut « Note 1 », « Note 2 »… premier numéro libre).
+
     Erreurs : `409 NO_OPEN_SESSION`, `404 NOT_FOUND` (table inconnue ou désactivée),
-    `409 TABLE_ALREADY_OCCUPIED` (`meta.order_id` : commande active à ouvrir).
+    `409 TABLE_ALREADY_OCCUPIED` (`meta.order_id` : la plus ancienne commande active,
+    `meta.active_orders`), `409 ORDER_LABEL_TAKEN` (étiquette déjà prise sur la table).
     """
     order = order_service.create_order(
-        db, table_id=body.table_id, guests_count=body.guests_count, actor_id=user.id, ctx=ctx
+        db,
+        table_id=body.table_id,
+        guests_count=body.guests_count,
+        note_label=body.note_label,
+        allow_multiple=body.allow_multiple,
+        actor_id=user.id,
+        ctx=ctx,
     )
     return _result(db, order.id)
 

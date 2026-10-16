@@ -9,6 +9,8 @@ Les fonctions développées sur la branche `aziz` sont reprises ici **sous les r
 | Sujet | Ce qui change pour le front | Où |
 |---|---|---|
 | **Gestion du catalogue** | `POST /categories`, `PATCH/DELETE /categories/{id}`, `POST /products`, `GET/PATCH /products/{id}`, `PATCH /products/{id}/price` (motif obligatoire, historisé), `GET /products/{id}/price-history`. Rôle RESPONSABLE. **Chez aziz** : `/catalog/categories`, `/catalog/products`, `/catalog/products/{id}/price` avec `new_price_xof` → ici `/categories`, `/products`, `/products/{id}/price` avec `price_xof`. `GET /categories` accepte `is_active`. | [§4](#4-catalogue) |
+| **Tables** | `POST /tables`, `PATCH/DELETE /tables/{id}` (ADMIN, suppression logique), `GET /tables?is_active=`. **Chez aziz** : `DELETE` renvoie un message → ici la table. | [§5](#5-tables) |
+| **Partage de table** | `POST /orders` accepte `note_label` et `allow_multiple` (mêmes noms que chez aziz) ; `order.note_label` dans toutes les réponses de commande ; `GET /tables/board` ajoute `orders[]` et `total_ttc_xof` par table (**chez aziz** : `active_orders[]`, `is_occupied`) et garde `order` (la plus ancienne). Nouveau code `ORDER_LABEL_TAKEN`. Une table rouverte n'empêche plus d'annuler un paiement (`table_reoccupied` supprimé). | [§5](#5-tables), [§7](#7-commandes) |
 
 ## Nouveautés du 16/10/2026 — stock et tableaux de bord
 
@@ -68,7 +70,7 @@ Les fonctions développées sur la branche `aziz` sont reprises ici **sous les r
 | 2 | [Authentification](#2-authentification) | `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/override` | Connexion par PIN, jetons, blocage par poste, autorisation ponctuelle d'un responsable |
 | 3 | [Utilisateurs](#3-utilisateurs) | `GET /users`, `POST /users`, `PATCH /users/{id}`, `POST /users/{id}/pin` | Gestion des comptes (ADMIN) |
 | 4 | [Catalogue](#4-catalogue) | `GET/POST /categories`, `PATCH/DELETE /categories/{id}`, `GET/POST /products`, `GET/PATCH /products/{id}`, `PATCH /products/{id}/price`, `GET /products/{id}/price-history`, `POST /products/custom` | Menu, gestion du catalogue (RESPONSABLE), prix historisé, article libre |
-| 5 | [Tables](#5-tables) | `GET /tables`, `GET /tables/board` | Salle et plan de salle (écran d'accueil) |
+| 5 | [Tables](#5-tables) | `GET/POST /tables`, `PATCH/DELETE /tables/{id}`, `GET /tables/board` | Salle (configuration ADMIN), plan de salle avec tables partagées |
 | 6 | [Sessions de caisse](#6-sessions-de-caisse) | `GET /cash-sessions/current`, `POST /cash-sessions`, `GET …/{id}/x-report`, `POST …/{id}/close`, `GET …/{id}/z-report`, `GET /cash-sessions`, `POST …/{id}/movements` | Ouverture, mouvements de tiroir, rapports X et Z, clôture |
 | 7 | [Commandes](#7-commandes) | `POST /orders`, `GET /orders`, `GET /orders/{id}`, `POST …/{id}/items`, `PATCH …/items/{item_id}`, `DELETE …/items/{item_id}`, `POST …/{id}/cancel` | Prise de commande, lignes (ajout, quantité, retrait), annulation sous autorisation |
 | 8 | [Paiements](#8-paiements) | `GET /payment-methods`, `POST /orders/{id}/payments`, `DELETE /orders/{id}/payments/{payment_id}` | Encaissement partiel ou mixte, rendu monnaie, annulation d'un paiement |
@@ -171,7 +173,7 @@ Le front doit se fier à **`code`**, qui est stable. `title` et `detail` sont de
 | `SESSION_HAS_OPEN_ORDERS` | 409 | Clôture refusée : des commandes ne sont pas soldées (`meta.open_orders[]`) |
 | `BUSINESS_DATE_MISMATCH` | 409 | Une session clôturée existe déjà pour cette journée comptable ; rejouer avec `confirm_business_date: true` |
 | `IDEMPOTENCY_CONFLICT` | 409 | Même `Idempotency-Key`, corps différent |
-| `TABLE_ALREADY_OCCUPIED` | 409 | La table porte déjà une commande active (`meta.order_id` : celle à ouvrir) |
+| `TABLE_ALREADY_OCCUPIED` | 409 | La table porte déjà une commande active (`meta.order_id` : la plus ancienne, à ouvrir) ; renvoyer avec `allow_multiple: true` pour partager la table |
 | `ORDER_NOT_EDITABLE` | 409 | Commande soldée ou annulée (`meta.status`), modification qui ferait passer le total sous le montant déjà encaissé, ou paiement sans reste dû (`meta.reason = "nothing_due"`) |
 | `PAYMENT_EXCEEDS_DUE` | 422 | Montant supérieur au reste dû (`meta.due_xof`, `meta.amount_xof`) |
 | `PAYMENT_METHOD_DISABLED` | 422 | Moyen de paiement non proposé par la caisse (`payments.methods`) |
@@ -185,6 +187,9 @@ Le front doit se fier à **`code`**, qui est stable. `title` et `detail` sont de
 | `NO_RECEIPT_TO_REPRINT` | 409 | `POST /orders/{id}/reprint` sur une commande sans ticket déjà imprimé |
 | `CATEGORY_NAME_EXISTS` | 409 | Catégorie déjà existante sous ce nom, sans la casse (`meta.category_id`) |
 | `CATEGORY_NOT_EMPTY` | 409 | Désactivation d'une catégorie qui a des produits actifs (`meta.active_products`) |
+| `ORDER_LABEL_TAKEN` | 409 | Étiquette déjà portée par une commande active de la table (`meta.order_id`) |
+| `TABLE_LABEL_EXISTS` | 409 | Table déjà existante sous ce libellé (`meta.table_id`) |
+| `TABLE_HAS_ACTIVE_ORDERS` | 409 | Désactivation d'une table qui porte des commandes en cours (`meta.order_ids`) |
 | `PRODUCT_NAME_EXISTS` | 409 | Produit du menu déjà existant sous ce nom (`meta.product_id`) |
 | `PRODUCT_SKU_EXISTS` | 409 | Code article (`sku`) déjà utilisé |
 | `STOCK_ARTICLE_NAME_EXISTS` | 409 | Article de stock déjà existant sous ce nom, sans tenir compte de la casse (`meta.article_id`) |
@@ -709,11 +714,11 @@ Trace dans `audit_logs` : `category.create`, `category.update`, `product.create`
 
 ## 5. Tables
 
-Préfixe : `/api/v1/tables` · **Accès : connecté**
+Préfixe : `/api/v1/tables` · **Accès** : lecture pour tout utilisateur connecté ; création, modification et désactivation réservées à l'**ADMIN**.
 
 ### `GET /tables` — configuration de la salle
 
-Réponse `200` : **tables actives uniquement**, triées par `sort_order` puis par libellé.
+Paramètre facultatif `is_active` : `true` par défaut (en service), `false` (désactivées). Réponse `200` triée par `sort_order` puis par libellé.
 
 ```json
 {
@@ -743,27 +748,31 @@ Réponse `200` :
       "zone": "Salle",
       "seats": 4,
       "status": "FREE",
-      "order": null
+      "order": null,
+      "orders": [],
+      "total_ttc_xof": 0
     }
   ]
 }
 ```
 
-Quand une table a une commande active (`OPEN` ou `PARTIALLY_PAID`) :
+Quand une table a une ou plusieurs commandes actives (`OPEN` ou `PARTIALLY_PAID`) :
 
 ```json
 {
   "status": "OCCUPIED",
-  "order": {
-    "id": "0a1b…",
-    "total_ttc_xof": 9000,
-    "paid_xof": 0,
-    "guests_count": 3,
-    "opened_at": "2026-09-27T12:04:10Z",
-    "status": "OPEN"
-  }
+  "order": { "id": "0a1b…", "order_number": "2026-09-27-0007", "note_label": "Note 1",
+             "total_ttc_xof": 9000, "paid_xof": 0, "guests_count": 3,
+             "opened_at": "2026-09-27T12:04:10Z", "status": "OPEN" },
+  "orders": [
+    { "id": "0a1b…", "note_label": "Note 1", "total_ttc_xof": 9000, "…": "…" },
+    { "id": "7c8d…", "note_label": "Groupe Koné", "total_ttc_xof": 4500, "…": "…" }
+  ],
+  "total_ttc_xof": 13500
 }
 ```
+
+**Partage de table** : `orders` liste toutes les commandes actives de la table, de la plus ancienne à la plus récente ; `order` reste la plus ancienne (compatibilité avec un écran qui n'en affiche qu'une) ; `total_ttc_xof` est le total de la table. Voir `POST /orders` (§7) pour ouvrir une commande de plus sur une table occupée.
 
 | Champ | Contenu |
 |---|---|
@@ -773,6 +782,22 @@ Quand une table a une commande active (`OPEN` ou `PARTIALLY_PAID`) :
 | `summary.open_orders` | Nombre de commandes encore ouvertes |
 
 À tester : ouvrir une session ([§6](#6-sessions-de-caisse)) → `business_date` se remplit ; créer une commande sur une table ([§7](#7-commandes)) → la table passe en `OCCUPIED` avec son total, et `summary.open_orders` augmente ; l'encaisser ([§8](#8-paiements)) ou l'annuler → la table redevient `FREE` ; une fois soldée, la commande compte dans `revenue_today_xof` et `orders_count`.
+
+### `POST /tables` — créer une table
+
+**Accès** : ADMIN.
+
+```json
+{ "label": "12", "zone": "Terrasse", "seats": 4 }
+```
+
+`label` : 1 à 20 caractères, **unique sans la casse** ; `zone` : `Salle` par défaut ; `seats` : 1 à 50, 4 par défaut ; `sort_order` : facultatif, en dernier par défaut. Réponse `201` : la table. Erreurs : `409 TABLE_LABEL_EXISTS` (`meta.table_id`), `422 VALIDATION_ERROR`.
+
+### `PATCH /tables/{id}` et `DELETE /tables/{id}` — modifier, désactiver
+
+**Accès** : ADMIN. `PATCH` ne change que les champs envoyés (`label`, `zone`, `seats`, `sort_order`, `is_active`). `DELETE` est une **suppression logique** (`is_active: false`) ; `PATCH {"is_active": true}` remet la table en service. Une table qui porte des commandes en cours ne peut pas être désactivée : `409 TABLE_HAS_ACTIVE_ORDERS` (`meta.order_ids`). Réponse `200` : la table. Autres erreurs : `404 NOT_FOUND`, `409 TABLE_LABEL_EXISTS`.
+
+Trace dans `audit_logs` : `table.create`, `table.update`.
 
 ---
 
@@ -982,6 +1007,7 @@ Une commande est toujours rattachée à la **session de caisse ouverte** et à s
     "table_id": "5e6f…",
     "counter_number": null,
     "guests_count": 4,
+    "note_label": "Note 1",
     "total_ttc_xof": 9500,
     "total_ht_xof": 9500,
     "total_vat_xof": 0,
@@ -1013,7 +1039,7 @@ Une commande est toujours rattachée à la **session de caisse ouverte** et à s
 |---|---|
 | Numérotation | `order_number` = `<journée>-<n° sur 4 chiffres>`, séquence par journée comptable |
 | Vente à emporter | `table_id: null` → `counter_number` attribué (« Comptoir n° X »), séquence par journée |
-| Une table, une commande | Au plus une commande `OPEN` / `PARTIALLY_PAID` par table, garanti en base |
+| Table partagée | Une commande `OPEN` / `PARTIALLY_PAID` par table, sauf partage demandé explicitement (`allow_multiple` ou `note_label`) : chaque commande d'une table a alors son étiquette |
 | Prix figé | Libellé, prix, TVA et groupe fiscal sont **copiés sur la ligne** à l'ajout : un changement de prix du menu ne touche pas les commandes en cours |
 | TVA | Calculée depuis le TTC, par taux : `ht = arrondi(ttc / (1 + taux))`, `tva = ttc − ht` |
 | Lignes modifiables | Uniquement en `OPEN` / `PARTIALLY_PAID`. Une fois soldée ou annulée, la commande est figée (`409 ORDER_NOT_EDITABLE`) |
@@ -1027,18 +1053,23 @@ Corps :
 |---|---|---|
 | `table_id` | UUID \| `null` | Table active ; `null` ou absent pour une vente à emporter |
 | `guests_count` | entier \| `null` | Facultatif, 1 à 99 |
+| `note_label` | chaîne \| `null` | Facultatif, 1 à 50 caractères : étiquette de la commande sur la table (« Groupe Koné »). Défaut sur une table : « Note 1 », « Note 2 »… (premier numéro libre) |
+| `allow_multiple` | booléen | `false` par défaut. Table occupée : `true` ouvre une commande de plus |
 
 ```json
 { "table_id": "5e6f…", "guests_count": 4 }
 ```
 
-Réponse `201` : `OrderResult`, sans lignes.
+Réponse `201` : `OrderResult`, sans lignes. `order.note_label` donne l'étiquette retenue.
+
+**Partage de table.** Une table occupée **refuse** une nouvelle commande (`409 TABLE_ALREADY_OCCUPIED`) : c'est le cas courant, le front ouvre alors la commande existante (`meta.order_id`). Pour servir un autre groupe à la même table, renvoyer la requête avec `allow_multiple: true` ou une `note_label`. Deux postes qui ouvrent la même table en même temps sont départagés par un verrou : le second reçoit le `409`.
 
 | Code | Cas | `meta` |
 |---|---|---|
 | `409 NO_OPEN_SESSION` | Aucune session de caisse ouverte | |
 | `404 NOT_FOUND` | Table inconnue ou désactivée | `table_id` |
-| `409 TABLE_ALREADY_OCCUPIED` | La table a déjà une commande active | `order_id` : la commande à ouvrir à la place |
+| `409 TABLE_ALREADY_OCCUPIED` | La table a déjà une commande active, sans `allow_multiple` ni `note_label` | `order_id` : la plus ancienne commande active ; `active_orders` : leur nombre |
+| `409 ORDER_LABEL_TAKEN` | Une commande active de la table porte déjà cette étiquette (sans la casse) | `order_id`, `note_label` |
 
 Trace dans `audit_logs` : `order.create`.
 
@@ -1307,7 +1338,7 @@ Warning `FNE_ALREADY_ISSUED` (`meta.document_id`, `meta.status`) si la commande 
 |---|---|---|
 | `403 OVERRIDE_REQUIRED` | Caissier sans jeton valide | `action`, `reason` |
 | `404 NOT_FOUND` | Commande ou paiement inconnu | |
-| `409 PAYMENT_NOT_VOIDABLE` | `reason` : `already_voided` ; `session_closed` (encaissé dans une session clôturée : le Z est figé) ; `table_reoccupied` (commande soldée dont la table a été rouverte, `order_id` de la nouvelle commande) | `payment_id`, `reason` |
+| `409 PAYMENT_NOT_VOIDABLE` | `reason` : `already_voided` ; `session_closed` (encaissé dans une session clôturée : le Z est figé). Depuis le partage de table, une table rouverte entre-temps n'empêche plus l'annulation (`table_reoccupied` n'existe plus) : la commande redevient active à côté des autres | `payment_id`, `reason` |
 
 Trace dans `audit_logs` : `payment.void`, avec le caissier (`user_id`) et le responsable qui a autorisé (`acting_as_user_id`).
 
@@ -2034,7 +2065,6 @@ docker exec infra-db sh -c 'psql -U "$POSTGRES_USER" -d caisse -c \
 
 | Lot | Routes du contrat absentes |
 |---|---|
-| L2 | `POST/PATCH /tables` |
 | L4 | `POST /orders/{id}/refunds` (remboursement d'une commande soldée, reporté : rare au restaurant) |
 | L6 | `GET /fne/daily-summary/{id}/export` (export du récapitulatif figé à la clôture), worker de renvoi automatique (le renvoi FNE/impression reste manuel pour l'instant) |
 | L5–L6 | `GET /reports/dashboard`, `GET /reports/audit` (les tableaux ventes et stock sont là : §12) |

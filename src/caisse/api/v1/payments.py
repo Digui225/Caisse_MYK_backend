@@ -95,7 +95,8 @@ def void_payment(
 
     Erreurs : `404 NOT_FOUND`, `403 OVERRIDE_REQUIRED`, `409 PAYMENT_NOT_VOIDABLE`
     (`meta.reason` : `already_voided`, `session_closed` (session déjà clôturée),
-    `table_reoccupied` (`meta.order_id` : la table a été rouverte), `order_status`).
+    `order_status`). Une table rouverte entre-temps n'empêche plus l'annulation : la
+    commande y redevient active à côté des autres (partage de table).
     """
     order, warnings = payment_service.void_payment(
         db,

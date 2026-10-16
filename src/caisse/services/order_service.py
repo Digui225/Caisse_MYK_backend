@@ -1,6 +1,5 @@
 import uuid
 
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from caisse.domain.enums import (
@@ -16,17 +15,18 @@ from caisse.errors import (
     NoOpenSessionError,
     NoReceiptToReprintError,
     NotFoundError,
+    OrderLabelTakenError,
     OrderNotEditableError,
     TableAlreadyOccupiedError,
     ValidationError,
 )
 from caisse.models.catalog import Category, Product
 from caisse.models.order import Order, OrderItem
-from caisse.models.table import RestaurantTable
 from caisse.models.user import User
 from caisse.repositories import orders as orders_repo
 from caisse.repositories import payments as payments_repo
 from caisse.repositories import print_jobs as print_jobs_repo
+from caisse.repositories import tables as tables_repo
 from caisse.schemas.orders import OrderItemOut, OrderOut, OrderSummaryOut
 from caisse.schemas.payments import PaymentOut
 from caisse.security import utcnow
@@ -106,25 +106,50 @@ def authorize_manager(
     return granter.id
 
 
+def _table_label(
+    db: Session, table_id: uuid.UUID, note_label: str | None, allow_multiple: bool
+) -> str:
+    """Étiquette de la nouvelle commande d'une table. La table est verrouillée : deux postes
+    qui ouvrent la même table se sérialisent, le second voit la commande du premier."""
+    table = tables_repo.get_for_update(db, table_id)
+    if table is None or not table.is_active:
+        raise NotFoundError(meta={"table_id": str(table_id)})
+    active = orders_repo.active_for_table(db, table_id)
+    if active and not (allow_multiple or note_label):
+        raise TableAlreadyOccupiedError(
+            meta={"order_id": str(active[0].id), "active_orders": len(active)}
+        )
+    used = {(o.note_label or "").lower(): o for o in active}
+    if note_label is not None:
+        taken = used.get(note_label.lower())
+        if taken is not None:
+            raise OrderLabelTakenError(meta={"order_id": str(taken.id), "note_label": note_label})
+        return note_label
+    number = 1
+    while f"note {number}" in used:
+        number += 1
+    return f"Note {number}"
+
+
 def create_order(
     db: Session,
     *,
     table_id: uuid.UUID | None,
     guests_count: int | None,
+    note_label: str | None = None,
+    allow_multiple: bool = False,
     actor_id: uuid.UUID,
     ctx: RequestContext,
 ) -> Order:
+    """Sur une table libre : « Note 1 ». Sur une table occupée : refus, sauf partage demandé
+    (`allow_multiple` ou étiquette fournie) ; la nouvelle commande prend le premier numéro
+    « Note n » libre. À emporter : numéro de comptoir, étiquette facultative."""
     session = auth_service.current_open_session(db)
     if session is None:
         raise NoOpenSessionError()
 
     if table_id is not None:
-        table = db.get(RestaurantTable, table_id)
-        if table is None or not table.is_active:
-            raise NotFoundError(meta={"table_id": str(table_id)})
-        existing = orders_repo.active_for_table(db, table_id)
-        if existing is not None:
-            raise TableAlreadyOccupiedError(meta={"order_id": str(existing.id)})
+        note_label = _table_label(db, table_id, note_label, allow_multiple)
 
     business_date = session.business_date
     number = next_value(db, f"order:{business_date.isoformat()}")
@@ -140,18 +165,11 @@ def create_order(
         status=OrderStatus.OPEN,
         opened_by_user_id=actor_id,
         guests_count=guests_count,
+        note_label=note_label,
         opened_at=utcnow(),
     )
     db.add(order)
-    try:
-        db.flush()
-    except IntegrityError:
-        # course entre deux postes : l'index partiel « une commande active par table » a tranché
-        db.rollback()
-        existing = orders_repo.active_for_table(db, table_id) if table_id else None
-        raise TableAlreadyOccupiedError(
-            meta={"order_id": str(existing.id) if existing else None}
-        ) from None
+    db.flush()
     audit_service.log(
         db,
         "order.create",
@@ -159,7 +177,11 @@ def create_order(
         user_id=actor_id,
         entity="order",
         entity_id=order.id,
-        after={"order_number": order.order_number, "table_id": str(table_id) if table_id else None},
+        after={
+            "order_number": order.order_number,
+            "table_id": str(table_id) if table_id else None,
+            "note_label": note_label,
+        },
     )
     db.commit()
     return order

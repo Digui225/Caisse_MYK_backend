@@ -22,11 +22,10 @@ from caisse.models.base import Base, Timestamps, UUIDPk, enum_column
 class Order(UUIDPk, Timestamps, Base):
     __tablename__ = "orders"
     __table_args__ = (
-        # une seule commande active par table
+        # commandes actives d'une table (partage de table : plusieurs « notes » possibles)
         Index(
-            "uq_orders_one_active_per_table",
+            "ix_orders_active_per_table",
             "table_id",
-            unique=True,
             postgresql_where=text("status IN ('OPEN','PARTIALLY_PAID')"),
         ),
         UniqueConstraint("order_number", name="uq_orders_order_number"),
@@ -56,6 +55,7 @@ class Order(UUIDPk, Timestamps, Base):
         ForeignKey("users.id", ondelete="RESTRICT")
     )
     guests_count: Mapped[int | None]
+    note_label: Mapped[str | None] = mapped_column(String(50))  # « Note 2 », « Groupe Koné »…
     total_ttc_xof: Mapped[int] = mapped_column(default=0)
     total_ht_xof: Mapped[int] = mapped_column(default=0)
     total_vat_xof: Mapped[int] = mapped_column(default=0)

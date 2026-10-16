@@ -114,7 +114,9 @@ def test_db_enforces_one_active_session_per_register(db: Session, make_user) -> 
     db.rollback()
 
 
-def test_db_enforces_one_active_order_per_table(db: Session, make_user) -> None:  # type: ignore[no-untyped-def]
+def test_db_allows_shared_table(db: Session, make_user) -> None:  # type: ignore[no-untyped-def]
+    """Partage de table (migration 0006) : plusieurs commandes actives sur une table ; c'est
+    le service qui décide, sous verrou de la table (test_tables_sharing)."""
     user = make_user("111111")
     session = _open_session(db, user.id)
     table = RestaurantTable(label="5")
@@ -131,9 +133,7 @@ def test_db_enforces_one_active_order_per_table(db: Session, make_user) -> None:
                 opened_at=utcnow(),
             )
         )
-    with pytest.raises(IntegrityError):
-        db.commit()
-    db.rollback()
+    db.commit()
 
 
 def test_cli_set_vat_rate_updates_default_and_products(db: Session) -> None:

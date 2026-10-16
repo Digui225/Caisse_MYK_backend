@@ -238,7 +238,8 @@ def test_void_payment(client: TestClient, setup: dict[str, Any]) -> None:
     assert cancelled.status_code == 200, cancelled.text
 
 
-def test_void_refused_when_table_reoccupied(client: TestClient, setup: dict[str, Any]) -> None:
+def test_void_allowed_when_table_reoccupied(client: TestClient, setup: dict[str, Any]) -> None:
+    """Partage de table : la commande redevient active à côté de celle qui a rouvert la table."""
     cashier, manager = setup["cashier"], setup["manager"]
     order_id = _order(client, setup)
     paid = _pay(client, cashier, order_id, "k1", method="CASH", amount_xof=9000).json()
@@ -248,10 +249,10 @@ def test_void_refused_when_table_reoccupied(client: TestClient, setup: dict[str,
         f"/api/v1/orders/{order_id}/payments/{paid['payment']['id']}?reason=erreur",
         headers=manager,
     )
-    assert resp.status_code == 409
-    assert resp.json()["code"] == "PAYMENT_NOT_VOIDABLE"
-    assert resp.json()["meta"]["reason"] == "table_reoccupied"
-    assert resp.json()["meta"]["order_id"] == next_order
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["order"]["status"] == "OPEN"
+    board = client.get("/api/v1/tables/board", headers=cashier).json()["tables"][0]
+    assert [o["id"] for o in board["orders"]] == [order_id, next_order]
 
 
 def test_void_warns_when_fne_issued(client: TestClient, db: Session, setup: dict[str, Any]) -> None:

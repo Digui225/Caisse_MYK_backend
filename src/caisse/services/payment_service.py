@@ -313,11 +313,6 @@ def void_payment(
     session = auth_service.current_open_session(db)
     if session is None or payment.cash_session_id != session.id:
         raise refuse("session_closed")
-    if order.status == OrderStatus.PAID and order.table_id is not None:
-        occupant = orders_repo.active_for_table(db, order.table_id)
-        if occupant is not None:
-            raise refuse("table_reoccupied", order_id=str(occupant.id))
-
     granted_by = order_service.authorize_manager(db, user, override_token, VOID_ACTION)
     before_status = order.status
     payment.status = PaymentStatus.VOIDED

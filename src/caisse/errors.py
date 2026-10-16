@@ -61,6 +61,13 @@ BusinessDateMismatchError = _error(
     "BusinessDateMismatchError", 409, "Journée comptable à confirmer"
 )
 TableAlreadyOccupiedError = _error("TableAlreadyOccupiedError", 409, "Table déjà occupée")
+OrderLabelTakenError = _error(
+    "OrderLabelTakenError", 409, "Une commande active de la table porte déjà cette étiquette"
+)
+TableLabelExistsError = _error("TableLabelExistsError", 409, "Une table porte déjà ce libellé")
+TableHasActiveOrdersError = _error(
+    "TableHasActiveOrdersError", 409, "La table a des commandes en cours"
+)
 OrderNotEditableError = _error("OrderNotEditableError", 409, "Commande non modifiable")
 PaymentExceedsDueError = _error("PaymentExceedsDueError", 422, "Montant supérieur au reste dû")
 PaymentNotVoidableError = _error("PaymentNotVoidableError", 409, "Paiement impossible à annuler")
