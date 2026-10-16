@@ -2,6 +2,14 @@
 
 Ce document décrit les **routes réellement implémentées** dans `caisse-backend`, telles que le code les expose aujourd'hui. Le contrat cible complet est dans [`03-CONTRAT-API.md`](../../projet_caisse_MYK/03-CONTRAT-API.md). Toute route du contrat absente d'ici renvoie `404 NOT_FOUND`.
 
+## Nouveautés du 16/10/2026 — reprise de la branche `aziz`
+
+Les fonctions développées sur la branche `aziz` sont reprises ici **sous les routes de ce document** (contrat `03-CONTRAT-API.md`). Le front s'aligne sur ces routes, pas sur celles de la branche `aziz`.
+
+| Sujet | Ce qui change pour le front | Où |
+|---|---|---|
+| **Gestion du catalogue** | `POST /categories`, `PATCH/DELETE /categories/{id}`, `POST /products`, `GET/PATCH /products/{id}`, `PATCH /products/{id}/price` (motif obligatoire, historisé), `GET /products/{id}/price-history`. Rôle RESPONSABLE. **Chez aziz** : `/catalog/categories`, `/catalog/products`, `/catalog/products/{id}/price` avec `new_price_xof` → ici `/categories`, `/products`, `/products/{id}/price` avec `price_xof`. `GET /categories` accepte `is_active`. | [§4](#4-catalogue) |
+
 ## Nouveautés du 16/10/2026 — stock et tableaux de bord
 
 | Sujet | Ce qui change pour le front | Où |
@@ -59,7 +67,7 @@ Ce document décrit les **routes réellement implémentées** dans `caisse-backe
 | 1 | [Santé](#1-santé) | `GET /health`, `GET /health/ready` | L'API répond, la base et l'imprimante sont joignables |
 | 2 | [Authentification](#2-authentification) | `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/override` | Connexion par PIN, jetons, blocage par poste, autorisation ponctuelle d'un responsable |
 | 3 | [Utilisateurs](#3-utilisateurs) | `GET /users`, `POST /users`, `PATCH /users/{id}`, `POST /users/{id}/pin` | Gestion des comptes (ADMIN) |
-| 4 | [Catalogue](#4-catalogue) | `GET /categories`, `GET /products`, `POST /products/custom` | Menu en lecture, article libre |
+| 4 | [Catalogue](#4-catalogue) | `GET/POST /categories`, `PATCH/DELETE /categories/{id}`, `GET/POST /products`, `GET/PATCH /products/{id}`, `PATCH /products/{id}/price`, `GET /products/{id}/price-history`, `POST /products/custom` | Menu, gestion du catalogue (RESPONSABLE), prix historisé, article libre |
 | 5 | [Tables](#5-tables) | `GET /tables`, `GET /tables/board` | Salle et plan de salle (écran d'accueil) |
 | 6 | [Sessions de caisse](#6-sessions-de-caisse) | `GET /cash-sessions/current`, `POST /cash-sessions`, `GET …/{id}/x-report`, `POST …/{id}/close`, `GET …/{id}/z-report`, `GET /cash-sessions`, `POST …/{id}/movements` | Ouverture, mouvements de tiroir, rapports X et Z, clôture |
 | 7 | [Commandes](#7-commandes) | `POST /orders`, `GET /orders`, `GET /orders/{id}`, `POST …/{id}/items`, `PATCH …/items/{item_id}`, `DELETE …/items/{item_id}`, `POST …/{id}/cancel` | Prise de commande, lignes (ajout, quantité, retrait), annulation sous autorisation |
@@ -175,6 +183,10 @@ Le front doit se fier à **`code`**, qui est stable. `title` et `detail` sont de
 | `FNE_CUSTOMER_REQUIRED`, `FNE_NCC_REQUIRED`, `FNE_NO_PAYMENT`, `FNE_VAT_RATE_UNMAPPED`, `FNE_PAYMENT_METHOD_UNMAPPED`, `FNE_FIELD_REQUIRED` | 422 | Commande impossible à traduire en FNE (client, NCC, paiement, taux de TVA, client de passage non paramétré) |
 | `FNE_REFUND_EXCEEDS` | 422 | Avoir supérieur à la quantité certifiée restante (`meta.available`) |
 | `NO_RECEIPT_TO_REPRINT` | 409 | `POST /orders/{id}/reprint` sur une commande sans ticket déjà imprimé |
+| `CATEGORY_NAME_EXISTS` | 409 | Catégorie déjà existante sous ce nom, sans la casse (`meta.category_id`) |
+| `CATEGORY_NOT_EMPTY` | 409 | Désactivation d'une catégorie qui a des produits actifs (`meta.active_products`) |
+| `PRODUCT_NAME_EXISTS` | 409 | Produit du menu déjà existant sous ce nom (`meta.product_id`) |
+| `PRODUCT_SKU_EXISTS` | 409 | Code article (`sku`) déjà utilisé |
 | `STOCK_ARTICLE_NAME_EXISTS` | 409 | Article de stock déjà existant sous ce nom, sans tenir compte de la casse (`meta.article_id`) |
 | `PRINT_JOB_NOT_RETRYABLE` | 409 | `POST /printing/jobs/{id}/retry` sur un travail déjà `DONE` ou en cours |
 | `PRINTER_UNAVAILABLE` | 503 | Action directe (`/printing/open-drawer`, `/printing/test`) : l'agent répond, l'imprimante non. **Jamais** renvoyé par `/orders/{id}/payments` ou `/cash-sessions/{id}/close` : voir [§10](#10-impression). |
@@ -505,11 +517,13 @@ Trace dans `audit_logs` : `user.pin_reset`.
 
 ## 4. Catalogue
 
-Préfixe : `/api/v1` · **Accès : connecté** · La gestion du catalogue (création, modification, prix) n'est pas encore implémentée ; seul l'article libre (`POST /products/custom`) peut être créé.
+Préfixe : `/api/v1`. **Accès** : lecture et article libre pour tout utilisateur connecté ; création, modification et prix réservés au **RESPONSABLE**.
+
+Les lignes de commande **figent** nom, catégorie, prix et TVA au moment de l'ajout : modifier le catalogue ne change jamais une commande déjà saisie.
 
 ### `GET /categories`
 
-Réponse `200` : **catégories actives uniquement**, triées par `sort_order` puis par nom.
+Paramètre facultatif `is_active` : `true` par défaut (actives), `false` (désactivées). Réponse `200` triée par `sort_order` puis par nom.
 
 ```json
 {
@@ -618,6 +632,78 @@ Réponse `201` : le produit, au format de `GET /products` (`stock_quantity: null
 | `422 VALIDATION_ERROR` | Nom vide, prix négatif |
 
 Trace dans `audit_logs` : `product.create_custom`.
+
+### `GET /products/{id}` — détail
+
+Même format que `GET /products`, articles libres compris. `404 NOT_FOUND` si inconnu.
+
+### `POST /categories` — créer une catégorie
+
+**Accès** : RESPONSABLE.
+
+```json
+{ "name": "Poissons", "kind": "FOOD", "fiscal_group": "POISSONS", "color": "#B45309" }
+```
+
+| Champ | Contraintes |
+|---|---|
+| `name` | 1 à 60 caractères, **unique sans tenir compte de la casse** |
+| `kind` | `FOOD`, `DRINK` ou `OTHER` |
+| `fiscal_group` | Facultatif, `AUTRES` par défaut, mis en majuscules (POISSONS, VIANDES, JUS, EAU, PLATS, AUTRES…) |
+| `color` | Facultatif, `#RRGGBB` |
+| `sort_order` | Facultatif ; défaut : après la dernière catégorie |
+
+Réponse `201` : la catégorie. Erreurs : `409 CATEGORY_NAME_EXISTS` (`meta.category_id`), `422 VALIDATION_ERROR`.
+
+### `PATCH /categories/{id}` et `DELETE /categories/{id}` — modifier, désactiver
+
+`PATCH` ne change que les champs envoyés (`name`, `kind`, `fiscal_group`, `color` — `null` l'efface —, `sort_order`, `is_active`). `DELETE` est une **suppression logique** (`is_active: false`), comme `PATCH {"is_active": false}` ; `PATCH {"is_active": true}` réactive.
+
+Une catégorie qui contient encore des **produits actifs** ne peut pas être désactivée : `409 CATEGORY_NOT_EMPTY` (`meta.active_products`). Retirer d'abord ses produits du menu. Réponse `200` : la catégorie. Autres erreurs : `404 NOT_FOUND`, `409 CATEGORY_NAME_EXISTS`.
+
+### `POST /products` — créer un produit
+
+**Accès** : RESPONSABLE.
+
+```json
+{ "category_id": "c1d2…", "name": "Plat poulet", "short_name": "Plat poulet", "price_xof": 3000 }
+```
+
+| Champ | Contraintes |
+|---|---|
+| `category_id` | Catégorie **active** |
+| `name` | 1 à 120 caractères, unique dans le menu (sans la casse ; les articles libres ne comptent pas) |
+| `short_name` | Facultatif, 20 caractères au plus ; défaut : les 20 premiers caractères du nom |
+| `price_xof` | Entier ≥ 0, TTC |
+| `vat_rate` | Facultatif ; défaut : `vat.default_rate` (0 % en régime TEE) |
+| `color`, `sort_order`, `sku` | Facultatifs ; `sort_order` par défaut en fin de catégorie ; `sku` unique |
+
+Réponse `201` : le produit, au format de `GET /products`. Pour qu'il déstocke, lui donner une fiche technique (§11). Erreurs : `404 NOT_FOUND` (catégorie inconnue ou désactivée), `409 PRODUCT_NAME_EXISTS` (`meta.product_id`), `409 PRODUCT_SKU_EXISTS`, `422 VALIDATION_ERROR`.
+
+### `PATCH /products/{id}` — modifier un produit
+
+Seuls les champs envoyés changent : `category_id`, `name`, `short_name`, `vat_rate`, `color`, `sort_order`, `sku` (`null` l'efface), `is_active` (`false` : retiré du menu). **Le prix ne se change pas ici** : un `price_xof` envoyé est ignoré. Réponse `200` : le produit. Erreurs : celles de `POST /products`.
+
+### `PATCH /products/{id}/price` — changer le prix
+
+**Accès** : RESPONSABLE.
+
+```json
+{ "price_xof": 3500, "reason": "Hausse du prix du poulet" }
+```
+
+`reason` obligatoire. Le changement est historisé et tracé (`product.price_change`). Il vaut pour les lignes ajoutées **ensuite** : une commande en cours garde ses prix. Un prix identique ne change rien. Réponse `200` : le produit.
+
+### `GET /products/{id}/price-history` — historique des prix
+
+**Accès** : RESPONSABLE. Du plus récent au plus ancien :
+
+```json
+{ "items": [ { "old_price_xof": 3000, "new_price_xof": 3500, "reason": "Hausse du prix du poulet",
+               "changed_by": "…", "changed_at": "2026-10-16T10:00:00Z" } ], "next_cursor": null }
+```
+
+Trace dans `audit_logs` : `category.create`, `category.update`, `product.create`, `product.update`, `product.price_change`.
 
 ---
 
@@ -1948,7 +2034,7 @@ docker exec infra-db sh -c 'psql -U "$POSTGRES_USER" -d caisse -c \
 
 | Lot | Routes du contrat absentes |
 |---|---|
-| L2 | `POST/PATCH/DELETE /categories`, `POST/PATCH /products`, `PATCH /products/{id}/price`, `POST/PATCH /tables` |
+| L2 | `POST/PATCH /tables` |
 | L4 | `POST /orders/{id}/refunds` (remboursement d'une commande soldée, reporté : rare au restaurant) |
 | L6 | `GET /fne/daily-summary/{id}/export` (export du récapitulatif figé à la clôture), worker de renvoi automatique (le renvoi FNE/impression reste manuel pour l'instant) |
 | L5–L6 | `GET /reports/dashboard`, `GET /reports/audit` (les tableaux ventes et stock sont là : §12) |

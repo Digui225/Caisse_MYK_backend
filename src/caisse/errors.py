@@ -91,6 +91,14 @@ PrintJobNotRetryableError = _error(
 StockArticleNameExistsError = _error(
     "StockArticleNameExistsError", 409, "Un article de stock porte déjà ce nom"
 )
+CategoryNameExistsError = _error("CategoryNameExistsError", 409, "Une catégorie porte déjà ce nom")
+CategoryNotEmptyError = _error(
+    "CategoryNotEmptyError", 409, "La catégorie contient encore des produits actifs"
+)
+ProductNameExistsError = _error(
+    "ProductNameExistsError", 409, "Un produit du menu porte déjà ce nom"
+)
+ProductSkuExistsError = _error("ProductSkuExistsError", 409, "Ce code article est déjà utilisé")
 
 
 class PrinterUnavailableError(InfrastructureError):
