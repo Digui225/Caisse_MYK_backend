@@ -11,7 +11,7 @@ Document vivant : on coche, on corrige et on note les découvertes au fil de l'i
 | Auth | `Authorization: Bearer <API KEY>` (onglet « Paramétrage » de l'espace FNE) |
 | Vente | `POST {url}/external/invoices/sign` — `invoiceType: "sale"` |
 | Avoir | `POST {url}/external/invoices/{invoice.id}/refund` — `items: [{id, quantity}]` |
-| Réponse | `reference` (n° FNE), `token` (URL de vérification → QR), `balance_sticker`, `warning`, `invoice` (avec `id` et `items[].id`) |
+| Réponse | `reference` (n° FNE), `token` (URL de vérification → QR), `balance_funds` (solde en XOF ; la procédure disait `balance_sticker`), `warning`, `invoice` (avec `id` et `items[].id`) |
 | Erreurs | 400 requête invalide (détail par champ dans `errors`), 401 clé invalide, 500 erreur serveur (**peut laisser une facture créée**) |
 | Établissement | `RESTAURANT CHEZ SYLLA PLUS` |
 
@@ -64,23 +64,23 @@ MANUAL : document traité hors API.
 - [x] Tests unitaires (`tests/unit/domain/test_fne.py`)
 
 ### Phase 3 — Client HTTP (`infrastructure/fne/`)
-- [x] Port `FneProvider` : `sign(payload)` et `refund(invoice_id, payload)` ; `FneResult` (`invoice_id`, `items`, montants, `balance_sticker`, `warning`)
+- [x] Port `FneProvider` : `sign(payload)` et `refund(invoice_id, payload)` ; `FneResult` (`invoice_id`, `items`, montants, `balance_funds_xof`, `low_balance_warning`)
 - [x] `HttpFneProvider` (httpx) avec classification des erreurs : `FneRejectedError` (4xx), `FneAuthError` (401), `FneUnavailableError` (connexion impossible, 502/503), `FneUncertainError` (délai dépassé après envoi, 500, 504, réponse illisible)
 - [x] `MockFneProvider` (dév. et tests) et sélection selon `FNE_PROVIDER`
 - [x] Tests du client avec `httpx.MockTransport` (`tests/unit/infrastructure/test_fne_client.py`) ; à compléter avec les traces réelles de la sonde
 
 ### Phase 4 — Schéma (migration `0002`, réversible)
-- [x] `fne_documents` : `template`, `fne_invoice_id`, `parent_document_id` (avoir → vente), `items_map` (ligne caisse → id article FNE), `fne_amount_ttc_xof`, `sticker_balance`, `is_uncertain`, `created_by_user_id`
+- [x] `fne_documents` : `template`, `fne_invoice_id`, `parent_document_id` (avoir → vente), `items_map` (ligne caisse → id article FNE), `fne_amount_ttc_xof`, `balance_funds_xof`, `low_balance_warning`, `is_uncertain`, `created_by_user_id`
 - [x] Enum `FneDocumentType.REFUND` (⚠ nouvelle valeur : prévenir le front, contrat §6)
 - [x] Index unique partiel : une FNE de vente par commande (D6) ; NCC client unique
-- [x] Paramètres métier : `fne.point_of_sale`, `fne.establishment`, `fne.walk_in_client`, `fne.sticker_alert_threshold` (valeur par défaut si la clé manque en base)
+- [x] Paramètres métier : `fne.point_of_sale`, `fne.establishment`, `fne.walk_in_client` (valeur par défaut si la clé manque en base) ; `fne.sticker_alert_threshold` supprimé le 06/10/2026
 
 ### Phase 5 — Service (`services/fne_service.py`)
 - [x] `issue_for_order` : commande soldée, une FNE par commande (rappel = même document, sans appel), FNE refusée reconstruite
 - [x] `_submit` : `SUBMITTING` commité **avant** l'appel, appel synchrone (`FNE_SYNC_TIMEOUT_SECONDS`), transitions de la §2, audit `fne.submit`
 - [x] `refund` : avoir total ou partiel à partir de `items_map`, quantités déjà reprises déduites
 - [x] `retry`, `resolve` (certifiée avec n° relevé, ou non certifiée → renvoi) ; mode `manual` → `MANUAL`
-- [x] Alerte stickers : avertissement `FNE_STICKER_LOW` sous `fne.sticker_alert_threshold`
+- [x] Alerte solde bas : avertissement `FNE_STICKER_LOW` quand la DGI renvoie `warning: true` (`meta.balance_funds_xof`)
 - [ ] Alerte stickers dans `/health` et le journal (avec le worker)
 
 ### Phase 6 — API (contrat §4.8 + ajouts non cassants)
@@ -120,3 +120,5 @@ MANUAL : document traité hors API.
 | 01/10/2026 | Ébauche PDF téléchargée depuis l'espace FNE (essai de 12:12) : pas de n° ni de QR ; émetteur repris de l'espace FNE (NCC 1304777N, RCCM, adresse, PDV) ; P.U HT affiché arrondi (2 966), totaux exacts (6 932 + 1 068 = 8 000) ; **régime d'imposition TEE** | D3 : taux de TVA de la caisse à faire confirmer ; format NCC 7 chiffres + lettre confirmé ; la caisse n'envoie pas les données de l'émetteur |
 | 01/10/2026 | Vraie FNE de production (photo) : n° `1304777N26000000023` = NCC + année + n° d'ordre sur 9 chiffres ; tous les articles en `TVAD (0)`, TVA 0 ; client B2B CGECI `9506466A` affiché avec son régime (« RS employeur ») retrouvé par la FNE ; vendeur, unité `U` et références renseignés ; PDV de prod « Service Facturation » ; coordonnées du restaurant différentes du test ; format A4 | TEE confirmé en pratique (D3) ; la FNE connaît les NCC ; D9, D10, D11 ; la caisse continuera la série déjà entamée via l'application FNE (éviter la double facturation d'une même vente) |
 | 01/10/2026 | Régime **TEE confirmé** | Caisse à 0 % par défaut (`vat.default_rate`), `TVAD` sur la FNE ; HT = TTC, plus aucun arrondi de TVA |
+| 05/10/2026 | Panne de signature côté DGI alors que le solde avait été rechargé la veille (factures du dev front numérotées le 04/10) : `ReadTimeout` après 15 s, puis `504 Connection Timed Out` de la passerelle après 30 s ; factures créées **sans numéro** dans l'espace FNE | Classement « incertain » confirmé à l'usage ; incident signalé à la DGI ; aucun document en base caisse (essais via `fne-probe`) |
+| 06/10/2026 | Service rétabli : B2B certifiée en ~1 s (`1304777N26000000005`), TTC 8 000 / 8 000, TVA 1 068. La réponse ne contient plus `balance_sticker` mais **`balance_funds: 20400`** (solde prépayé en XOF) | `FNE_STICKER_LOW` restait muet (seuil comparé à un champ absent) : alerte basée sur `warning` de la DGI, solde stocké en XOF (migration 0004). Coût d'une facture inconnu : à demander à la DGI pour afficher un nombre de factures restantes |

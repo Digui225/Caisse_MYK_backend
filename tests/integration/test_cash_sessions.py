@@ -139,9 +139,12 @@ def test_close_session_computes_expected_cash_and_z_number(
     assert z["variance_xof"] == 0
     assert z["z_number"] == 1
 
+    assert z["print_job_id"]
+
     z_report = client.get(f"/api/v1/cash-sessions/{session_id}/z-report", headers=headers)
     assert z_report.status_code == 200
     assert z_report.json()["z_number"] == 1
+    assert z_report.json()["print_job_id"] == z["print_job_id"]
 
 
 def test_history_reserved_to_responsable(

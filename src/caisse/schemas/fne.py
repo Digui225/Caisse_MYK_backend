@@ -95,7 +95,7 @@ class FneDocumentResult(Schema):
     warnings: list[ApiWarning] = Field(
         default=[],
         description="`FNE_REJECTED` (refus DGI), `FNE_UNCERTAIN`, `FNE_QUEUED`, "
-        "`FNE_STICKER_LOW` (stock de stickers bas)",
+        "`FNE_STICKER_LOW` (solde FNE bas, `meta.balance_funds_xof`)",
     )
 
 

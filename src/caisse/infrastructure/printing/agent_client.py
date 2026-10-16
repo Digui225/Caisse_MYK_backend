@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 
 from caisse.config import get_settings
-from caisse.domain.ports import PrinterStatus
+from caisse.domain.ports import PrinterStatus, PrintResult
 
 _STATUS_CACHE_SECONDS = 5.0
 
@@ -36,13 +36,26 @@ class PrintAgentClient:
         self._cached = (now, status)
         return status
 
-    def print(self, content: str, *, qr: str | None, open_drawer: bool, cut: bool = True) -> None:
-        self._client.post(
-            "/print", json={"content": content, "qr": qr, "open_drawer": open_drawer, "cut": cut}
-        ).raise_for_status()
+    def print(
+        self, content: str, *, qr: str | None, open_drawer: bool, cut: bool = True
+    ) -> PrintResult:
+        data = (
+            self._client.post(
+                "/print",
+                json={"content": content, "qr": qr, "open_drawer": open_drawer, "cut": cut},
+            )
+            .raise_for_status()
+            .json()
+        )
+        return PrintResult(
+            printed=bool(data.get("printed")), drawer_opened=bool(data.get("drawer_opened"))
+        )
 
     def open_drawer(self) -> None:
         self._client.post("/open-drawer").raise_for_status()
+
+    def test_print(self) -> None:
+        self._client.post("/test-print").raise_for_status()
 
 
 _client: PrintAgentClient | None = None

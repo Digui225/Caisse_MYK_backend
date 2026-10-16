@@ -63,6 +63,10 @@ BusinessDateMismatchError = _error(
 TableAlreadyOccupiedError = _error("TableAlreadyOccupiedError", 409, "Table déjà occupée")
 OrderNotEditableError = _error("OrderNotEditableError", 409, "Commande non modifiable")
 PaymentExceedsDueError = _error("PaymentExceedsDueError", 422, "Montant supérieur au reste dû")
+PaymentNotVoidableError = _error("PaymentNotVoidableError", 409, "Paiement impossible à annuler")
+PaymentMethodDisabledError = _error(
+    "PaymentMethodDisabledError", 422, "Moyen de paiement non proposé par la caisse"
+)
 IdempotencyConflictError = _error("IdempotencyConflictError", 409, "Clé d'idempotence réutilisée")
 NotFoundError = _error("NotFoundError", 404, "Ressource introuvable")
 PinAlreadyUsedError = _error("PinAlreadyUsedError", 409, "Ce code PIN est déjà attribué")
@@ -78,6 +82,25 @@ FneDocumentStateError = _error(
 FneRefundExceedsError = _error(
     "FneRefundExceedsError", 422, "Quantité d'avoir supérieure à la quantité certifiée"
 )
+NoReceiptToReprintError = _error(
+    "NoReceiptToReprintError", 409, "Aucun ticket à ré-imprimer pour cette commande"
+)
+PrintJobNotRetryableError = _error(
+    "PrintJobNotRetryableError", 409, "Travail d'impression dans un état qui interdit le renvoi"
+)
+
+
+class PrinterUnavailableError(InfrastructureError):
+    """L'agent d'impression répond, mais l'imprimante elle-même ne peut pas imprimer
+    (papier, panne driver) — réservé aux actions directes (`/printing/*`)."""
+
+    code = "PRINTER_UNAVAILABLE"
+
+
+class PrintAgentUnavailableError(InfrastructureError):
+    """L'agent d'impression est injoignable — réservé aux actions directes (`/printing/*`)."""
+
+    code = "PRINT_AGENT_UNAVAILABLE"
 
 
 class FneInvalidDataError(DomainError):

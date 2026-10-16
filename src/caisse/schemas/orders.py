@@ -5,6 +5,8 @@ from pydantic import ConfigDict, Field
 
 from caisse.domain.enums import OrderStatus
 from caisse.schemas.common import ApiWarning, Schema
+from caisse.schemas.fne import FneDocumentOut
+from caisse.schemas.payments import PaymentOut
 
 
 class OrderCreate(Schema):
@@ -79,8 +81,31 @@ class OrderOut(OrderSummaryOut):
     items: list[OrderItemOut] = Field(
         description="Lignes actives (les lignes retirées n'y sont pas)"
     )
+    payments: list[PaymentOut] = Field(
+        description="Paiements, dans l'ordre d'encaissement (annulés compris, `status: VOIDED`)"
+    )
 
 
 class OrderResult(Schema):
     order: OrderOut = Field(description="Commande complète, totaux recalculés")
+    warnings: list[ApiWarning] = Field(default=[], description="Avertissements non bloquants")
+
+
+class ReceiptOut(Schema):
+    print_job_id: uuid.UUID = Field(description="Travail d'impression du ticket")
+    status: str = Field(description="État du travail d'impression")
+    drawer_opened: bool = Field(description="false : signaler que le tiroir ne s'est pas ouvert")
+
+
+class PaymentResult(Schema):
+    payment: PaymentOut = Field(description="Paiement enregistré")
+    order: OrderOut = Field(description="Commande à jour (statut, payé, reste dû)")
+    receipt: ReceiptOut | None = Field(
+        default=None,
+        description="Ticket de caisse ; toujours null tant que l'impression n'existe pas",
+    )
+    fiscal_document: FneDocumentOut | None = Field(
+        default=None,
+        description="Toujours null : la FNE est émise à la demande (`POST /orders/{id}/fne`)",
+    )
     warnings: list[ApiWarning] = Field(default=[], description="Avertissements non bloquants")

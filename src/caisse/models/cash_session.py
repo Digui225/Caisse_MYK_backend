@@ -61,6 +61,9 @@ class CashSession(UUIDPk, Timestamps, Base):
     closing_breakdown: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     totals_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     notes: Mapped[str | None] = mapped_column(String(500))
+    print_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("print_jobs.id", ondelete="SET NULL")
+    )
 
 
 class CashMovement(UUIDPk, CreatedAt, Base):

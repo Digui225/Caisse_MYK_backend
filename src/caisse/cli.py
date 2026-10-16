@@ -260,7 +260,7 @@ def cmd_fne_probe(args: argparse.Namespace) -> None:
     print(f"Facture certifiée : {sale.external_number}")
     print(f"QR (token)        : {sale.qr_payload}")
     print(f"TTC caisse / FNE  : {expected_ttc} / {sale.amount_ttc} (TVA FNE {sale.vat_amount})")
-    print(f"Stickers restants : {sale.balance_sticker} (alerte : {sale.sticker_warning})")
+    print(f"Solde FNE (XOF)   : {sale.balance_funds_xof} (alerte : {sale.low_balance_warning})")
 
     if args.refund:
         if not sale.invoice_id or not sale.items:

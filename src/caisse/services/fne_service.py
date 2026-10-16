@@ -58,7 +58,6 @@ RETRY_DELAYS = (
     timedelta(hours=1),
 )
 DEFAULT_WALK_IN = {"company_name": "CLIENT DIVERS", "phone": "", "email": ""}
-DEFAULT_STICKER_ALERT = 20
 MEASUREMENT_UNIT = "U"
 
 
@@ -136,12 +135,14 @@ def warnings_for(db: Session, doc: FneDocument) -> list[ApiWarning]:
                 },
             )
         )
-    threshold = int(
-        settings_repo.get_value(db, "fne.sticker_alert_threshold", DEFAULT_STICKER_ALERT)
-    )
-    if doc.sticker_balance is not None and doc.sticker_balance <= threshold:
+    # seuil fixé par la DGI (`warning`) : le coût d'une facture n'est pas connu de la caisse
+    if doc.low_balance_warning:
         warnings.append(
-            ApiWarning(code="FNE_STICKER_LOW", meta={"balance_sticker": doc.sticker_balance})
+            ApiWarning(
+                code="FNE_STICKER_LOW",
+                detail="Solde FNE bas : recharger avant qu'il soit épuisé",
+                meta={"balance_funds_xof": doc.balance_funds_xof},
+            )
         )
     return warnings
 
@@ -629,7 +630,8 @@ def _record_success(doc: FneDocument, result: FneResult) -> None:
     doc.certified_at = utcnow()
     doc.last_error = None
     doc.fne_amount_ttc_xof = result.amount_ttc
-    doc.sticker_balance = result.balance_sticker
+    doc.balance_funds_xof = result.balance_funds_xof
+    doc.low_balance_warning = result.low_balance_warning
     if doc.type is FneDocumentType.FNE:
         doc.fne_invoice_id = result.invoice_id
         order_item_ids: list[str] = doc.payload.get("order_item_ids", [])

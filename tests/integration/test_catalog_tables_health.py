@@ -12,7 +12,7 @@ from caisse.security import utcnow
 from caisse.seeds.defaults import ensure_defaults
 from caisse.seeds.demo import load_demo_menu
 
-from .conftest import auth, login
+from .conftest import FakePrintAgent, auth, login
 
 pytestmark = pytest.mark.integration
 
@@ -22,13 +22,22 @@ def test_health(client: TestClient) -> None:
     assert client.get("/api/v1/health").status_code == 200
 
 
-def test_ready_reports_db_and_offline_printer(client: TestClient) -> None:
+def test_ready_reports_db_and_printer(client: TestClient) -> None:
     resp = client.get("/health/ready")
     assert resp.status_code == 200
     body = resp.json()
     assert body["database"] == "ok"
-    assert body["printer"]["agent_online"] is False  # l'imprimante ne rend pas l'API indisponible
+    assert body["printer"]["agent_online"] is True
     assert body["queues"] == {"print_queued": 0, "print_failed": 0, "fne_pending": 0}
+
+
+def test_ready_survives_offline_printer(
+    client: TestClient, fake_print_agent: FakePrintAgent
+) -> None:
+    fake_print_agent.mode = "offline"
+    resp = client.get("/health/ready")
+    assert resp.status_code == 200  # l'imprimante ne rend jamais l'API indisponible
+    assert resp.json()["printer"]["agent_online"] is False
 
 
 def test_products_with_stock(client: TestClient, db: Session, make_user) -> None:  # type: ignore[no-untyped-def]

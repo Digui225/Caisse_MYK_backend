@@ -70,8 +70,8 @@ def parse_result(data: Any) -> FneResult:
         items=items,
         amount_ttc=_int_or_none(invoice.get("amount")),
         vat_amount=_int_or_none(invoice.get("vatAmount")),
-        balance_sticker=_int_or_none(data.get("balance_sticker")),
-        sticker_warning=bool(data.get("warning")),
+        balance_funds_xof=_int_or_none(data.get("balance_funds")),
+        low_balance_warning=bool(data.get("warning")),
         raw=data,
     )
 

@@ -65,5 +65,7 @@ print-agent/       service systemd hors Docker (imprimante USB + tiroir)
 | L0 | Squelette, schéma + migration, problem+json, `domain/money`, OpenAPI | Endpoints mockés du reste du contrat, CI |
 | L1 | PIN Argon2, JWT + refresh (rotation), RBAC, override 60 s usage unique, blocage progressif par poste, users, audit, sessions de caisse (ouverture/clôture, X/Z, mouvements, idempotence générique) | — |
 | L2 | Lecture catégories / produits / tables, seeds, import CSV | CRUD catalogue, historique de prix |
-| L3 | `GET /tables/board` (requête agrégée), commandes (table / à emporter), lignes (ajout, modification, retrait avec motif), annulation sous override, article libre | Ré-impression (avec la file d'impression) |
-| L4+ | Agent d'impression (USB + tiroir, mode dummy) | Paiements, file d'impression, FNE, rapports, worker, backup |
+| L3 | `GET /tables/board` (requête agrégée), commandes (table / à emporter), lignes (ajout, modification, retrait avec motif), annulation sous override, article libre, `POST /orders/{id}/reprint` | — |
+| L4 | Paiements (idempotents, partiels/mixtes, rendu monnaie, annulation tracée sous override), `GET /payment-methods` ; agent d'impression (USB + tiroir, mode dummy) ; ticket imprimé et tiroir ouvert à l'encaissement et à la clôture (Z), `/printing/*` (état, file, rejeu, ouverture manuelle, test) | Remboursement d'une commande soldée (reporté) |
+| L6 | FNE à la demande (B2C/B2B, idempotente, résultats incertains, renvoi manuel, avoirs), clients entreprise, récapitulatif fiscal | Worker de renvoi automatique, export du récapitulatif figé au Z |
+| Reste | — | Stock, CRUD catalogue, rapports, worker (renvoi auto FNE + impression), backup, admin (`/settings`, `/cash-registers`) |

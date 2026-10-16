@@ -52,6 +52,13 @@ class PaymentMethod(StrEnum):
     OTHER = "OTHER"
 
 
+class MobileMoneyProvider(StrEnum):
+    ORANGE = "ORANGE"
+    MTN = "MTN"
+    MOOV = "MOOV"
+    WAVE = "WAVE"
+
+
 class PaymentStatus(StrEnum):
     CAPTURED = "CAPTURED"
     VOIDED = "VOIDED"

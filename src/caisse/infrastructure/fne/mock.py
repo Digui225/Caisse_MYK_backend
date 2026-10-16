@@ -12,9 +12,13 @@ _RATES = {"TVA": Decimal(18), "TVAB": Decimal(9), "TVAC": Decimal(0), "TVAD": De
 
 
 class MockFneProvider:
-    def __init__(self, ncc: str = "9999999X", balance_sticker: int = 1000) -> None:
+    # coût réel d'une facture inconnu : valeur arbitraire, seule la baisse du solde compte ici
+    def __init__(
+        self, ncc: str = "9999999X", balance_funds: int = 100_000, invoice_cost: int = 100
+    ) -> None:
         self.ncc = ncc
-        self.balance_sticker = balance_sticker
+        self.balance_funds = balance_funds
+        self.invoice_cost = invoice_cost
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.fail_next: list[FneError] = []  # erreurs à lever, dans l'ordre, avant tout traitement
         self._seq = 0
@@ -62,14 +66,14 @@ class MockFneProvider:
         return f"{prefix}{self.ncc}{datetime.now(UTC):%y}{self._seq:010d}"
 
     def _result(self, reference: str, invoice: dict[str, Any] | None) -> FneResult:
-        self.balance_sticker -= 1
+        self.balance_funds -= self.invoice_cost
         token = f"mock://fne/verification/{uuid.uuid4()}"
         body: dict[str, Any] = {
             "ncc": self.ncc,
             "reference": reference,
             "token": token,
-            "warning": self.balance_sticker < 10,
-            "balance_sticker": self.balance_sticker,
+            "warning": self.balance_funds < 10 * self.invoice_cost,
+            "balance_funds": self.balance_funds,
         }
         if invoice is not None:
             body["invoice"] = {**invoice, "reference": reference}

@@ -1,6 +1,7 @@
 # Projet caisse — rejoint le socle PostgreSQL partagé (../infra, réseau infra_shared).
 # Le service `web` (nginx + build React) arrivera avec le frontend ;
-# `worker` (outbox FNE / impression) et `backup` avec les lots L4, L6 et L7.
+# `worker` (renvoi automatique FNE/impression, aujourd'hui manuel via /fne/documents/{id}/retry
+# et /printing/jobs/{id}/retry) et `backup` avec un lot ultérieur.
 services:
   api:
     build:

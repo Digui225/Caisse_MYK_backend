@@ -3,7 +3,10 @@ from datetime import UTC, date, datetime
 
 from sqlalchemy.orm import Session
 
-from caisse.domain.enums import CashMovementType, CashSessionStatus
+from caisse.config import get_settings
+from caisse.domain import receipt as receipt_domain
+from caisse.domain.enums import CashMovementType, CashSessionStatus, PrintJobType
+from caisse.domain.ports import Printer
 from caisse.errors import (
     BusinessDateMismatchError,
     NoOpenSessionError,
@@ -15,6 +18,7 @@ from caisse.errors import (
 )
 from caisse.models.cash_session import CashMovement, CashSession
 from caisse.repositories import sessions as sessions_repo
+from caisse.repositories import settings as settings_repo
 from caisse.schemas.sessions import (
     Controls,
     FiscalGroupTotal,
@@ -24,7 +28,7 @@ from caisse.schemas.sessions import (
     ZReportOut,
 )
 from caisse.sequences import next_value
-from caisse.services import audit_service
+from caisse.services import audit_service, printing_service
 from caisse.services.audit_service import RequestContext
 
 
@@ -126,6 +130,7 @@ def close_session(
     notes: str | None,
     actor_id: uuid.UUID,
     ctx: RequestContext,
+    agent: Printer,
 ) -> CashSession:
     session = sessions_repo.get(db, session_id)
     if session is None:
@@ -164,6 +169,40 @@ def close_session(
         after={"z_number": z_number, "variance_xof": variance_xof},
     )
     db.commit()
+
+    header = settings_repo.get_value(db, "receipt.header", {})
+    footer = settings_repo.get_value(db, "receipt.footer", "")
+    rendered = receipt_domain.render_z_report(
+        z_number=z_number,
+        business_date=str(session.business_date),
+        opening_float_xof=session.opening_float_xof,
+        gross_ttc_xof=totals.gross_ttc_xof,
+        by_payment_method=[
+            receipt_domain.PaymentMethodAmount(method=t.method, amount_xof=t.amount_xof)
+            for t in totals.by_payment_method
+        ],
+        expected_cash_xof=expected_cash_xof,
+        counted_cash_xof=counted_cash_xof,
+        variance_xof=variance_xof,
+        cancelled_orders=totals.controls.cancelled_orders,
+        removed_items=totals.controls.removed_items,
+        header_name=str(header.get("name") or ""),
+        footer=str(footer or ""),
+        width=get_settings().printer_width,
+    )
+    # l'impression du Z ne doit jamais faire échouer la clôture : déjà committée ci-dessus.
+    job, _ = printing_service.create_and_print(
+        db,
+        job_type=PrintJobType.Z_REPORT,
+        agent=agent,
+        rendered=rendered,
+        open_drawer=False,
+        session_id=session.id,
+        user_id=actor_id,
+        ctx=ctx,
+    )
+    session.print_job_id = job.id
+    db.commit()
     return session
 
 
@@ -184,7 +223,7 @@ def z_report(db: Session, session_id: uuid.UUID) -> ZReportOut:
         counted_cash_xof=session.counted_cash_xof,
         variance_xof=session.variance_xof,
         totals=SessionTotals.model_validate(session.totals_snapshot),
-        print_job_id=None,
+        print_job_id=session.print_job_id,
     )
 
 

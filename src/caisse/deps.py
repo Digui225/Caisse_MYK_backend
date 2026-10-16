@@ -9,9 +9,10 @@ from sqlalchemy.orm import Session
 
 from caisse.database import get_db
 from caisse.domain.enums import UserRole, role_at_least
-from caisse.domain.ports import FneProvider
+from caisse.domain.ports import FneProvider, Printer
 from caisse.errors import InsufficientPrivilegeError, TokenExpiredError
 from caisse.infrastructure.fne import get_fne_provider
+from caisse.infrastructure.printing.agent_client import get_print_agent
 from caisse.models.user import User
 from caisse.services import auth_service
 from caisse.services.audit_service import RequestContext
@@ -75,3 +76,10 @@ def fne_provider() -> FneProvider | None:
 
 
 FneProviderDep = Annotated[FneProvider | None, Depends(fne_provider)]
+
+
+def print_agent() -> Printer:
+    return get_print_agent()
+
+
+PrintAgentDep = Annotated[Printer, Depends(print_agent)]

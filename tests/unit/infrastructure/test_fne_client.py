@@ -24,7 +24,8 @@ SIGN_RESPONSE = {
     "reference": "9606123E25000000019",
     "token": "http://54.247.95.108/fr/verification/019465c1-3f61-766c-9652-706e32dfb436",
     "warning": False,
-    "balance_sticker": 179,
+    # format observé le 06/10/2026 : `balance_funds` remplace `balance_sticker` de la procédure
+    "balance_funds": 20400,
     "invoice": {
         "id": "e2b2d8da-a532-4c08-9182-f5b428ca468d",
         "reference": "9606123E25000000019",
@@ -52,7 +53,7 @@ REFUND_RESPONSE = {
     "reference": "A9606123E2500000006",
     "token": "http://54.247.95.108/fr/verification/019465ca-c27c-700e-ba3f-09d0759b9170",
     "warning": False,
-    "balance_sticker": 178,
+    "balance_funds": 20300,
 }
 
 # Réponse réelle de l'environnement de test à un corps vide (01/10/2026), tronquée
@@ -93,7 +94,7 @@ def test_sign_sends_bearer_json_and_parses_response() -> None:
     assert result.invoice_id == "e2b2d8da-a532-4c08-9182-f5b428ca468d"
     assert [i.reference for i in result.items] == ["ref009", "ref001"]
     assert (result.amount_ttc, result.vat_amount) == (852660, 172260)
-    assert (result.balance_sticker, result.sticker_warning) == (179, False)
+    assert (result.balance_funds_xof, result.low_balance_warning) == (20400, False)
 
 
 def test_refund_targets_invoice_and_parses_short_response() -> None:

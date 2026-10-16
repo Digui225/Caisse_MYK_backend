@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Path, Request, Response, status
 
 from caisse import idempotency
-from caisse.deps import Ctx, CurrentUser, DbSession, Responsable
+from caisse.deps import Ctx, CurrentUser, DbSession, PrintAgentDep, Responsable
 from caisse.errors import NoOpenSessionError
 from caisse.idempotency import IdempotencyKey
 from caisse.repositories import sessions as sessions_repo
@@ -115,6 +115,7 @@ def close_session(
     request: Request,
     response: Response,
     idempotency_key: IdempotencyKey,
+    agent: PrintAgentDep,
 ) -> ZReportOut:
     """Idempotent (`Idempotency-Key` obligatoire).
 
@@ -137,6 +138,7 @@ def close_session(
         notes=body.notes,
         actor_id=user.id,
         ctx=ctx,
+        agent=agent,
     )
     out = cash_session_service.z_report(db, session_id)
     idempotency.save(

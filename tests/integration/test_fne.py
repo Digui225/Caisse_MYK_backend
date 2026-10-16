@@ -200,6 +200,24 @@ def test_issue_b2c_certifies_once(
     assert dup.json()["external_number"] == doc["external_number"]
 
 
+def test_low_balance_warning_comes_from_dgi_flag(
+    fne_client: TestClient, db: Session, setup: dict[str, Any], mock_fne: MockFneProvider
+) -> None:
+    """L'alerte suit le `warning` de la DGI : la caisse ne connaît pas le coût d'une facture."""
+    mock_fne.balance_funds = 10 * mock_fne.invoice_cost  # passe sous le seuil après cet appel
+    order = _paid_order(fne_client, db, setup, [("Poisson braisé", 1)])
+    resp = _issue(fne_client, setup["cashier"], order["id"])
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["document"]["status"] == "CERTIFIED"
+    assert resp.json()["warnings"] == [
+        {
+            "code": "FNE_STICKER_LOW",
+            "detail": "Solde FNE bas : recharger avant qu'il soit épuisé",
+            "meta": {"balance_funds_xof": 9 * mock_fne.invoice_cost},
+        }
+    ]
+
+
 def test_issue_requires_paid_order_and_configuration(
     fne_client: TestClient, db: Session, setup: dict[str, Any]
 ) -> None:

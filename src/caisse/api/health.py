@@ -7,8 +7,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from caisse.database import get_db
+from caisse.deps import PrintAgentDep
 from caisse.domain.enums import FneStatus, PrintJobStatus
-from caisse.infrastructure.printing.agent_client import get_print_agent
 from caisse.models.fne import FneDocument
 from caisse.models.print_job import PrintJob
 
@@ -24,7 +24,7 @@ def health() -> dict[str, str]:
 
 
 @router.get("/health/ready", summary="Le service est prêt à vendre")
-def ready(db: Session = Depends(get_db)) -> JSONResponse:
+def ready(agent: PrintAgentDep, db: Session = Depends(get_db)) -> JSONResponse:
     """Readiness : la base est indispensable ; l'imprimante et les files sont informatives
     (une imprimante absente ne bloque jamais la vente)."""
     body: dict[str, Any] = {"status": "ok"}
@@ -50,7 +50,7 @@ def ready(db: Session = Depends(get_db)) -> JSONResponse:
         }
     except SQLAlchemyError:
         body.update(status="unavailable", database="unreachable")
-    printer = get_print_agent().status()
+    printer = agent.status()
     body["printer"] = {
         "agent_online": printer.agent_online,
         "printer_online": printer.printer_online,

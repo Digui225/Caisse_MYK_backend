@@ -3,10 +3,18 @@ import uuid
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from caisse.domain.enums import ACTIVE_ORDER_STATUSES, OrderStatus, UserRole, role_at_least
+from caisse.domain.enums import (
+    ACTIVE_ORDER_STATUSES,
+    OrderStatus,
+    PrintJobType,
+    UserRole,
+    role_at_least,
+)
 from caisse.domain.money import line_total, split_vat_by_rate
+from caisse.domain.ports import Printer
 from caisse.errors import (
     NoOpenSessionError,
+    NoReceiptToReprintError,
     NotFoundError,
     OrderNotEditableError,
     TableAlreadyOccupiedError,
@@ -17,10 +25,13 @@ from caisse.models.order import Order, OrderItem
 from caisse.models.table import RestaurantTable
 from caisse.models.user import User
 from caisse.repositories import orders as orders_repo
+from caisse.repositories import payments as payments_repo
+from caisse.repositories import print_jobs as print_jobs_repo
 from caisse.schemas.orders import OrderItemOut, OrderOut, OrderSummaryOut
+from caisse.schemas.payments import PaymentOut
 from caisse.security import utcnow
 from caisse.sequences import next_value
-from caisse.services import audit_service, auth_service
+from caisse.services import audit_service, auth_service, printing_service
 from caisse.services.audit_service import RequestContext
 
 CANCEL_ACTION = "order.cancel"
@@ -44,7 +55,8 @@ def to_out(db: Session, order: Order) -> OrderOut:
         )
         for item in orders_repo.active_items(db, order.id)
     ]
-    return OrderOut(**to_summary(order).model_dump(), items=items)
+    payments = [PaymentOut.model_validate(p) for p in payments_repo.for_order(db, order.id)]
+    return OrderOut(**to_summary(order).model_dump(), items=items, payments=payments)
 
 
 def get_order(db: Session, order_id: uuid.UUID) -> Order:
@@ -82,7 +94,7 @@ def _recompute(db: Session, order: Order) -> None:
     order.due_xof = breakdown.ttc_xof - order.paid_xof
 
 
-def _authorize(
+def authorize_manager(
     db: Session, user: User, override_token: str | None, action: str
 ) -> uuid.UUID | None:
     """Responsable : direct. Caissier : jeton d'override consommé. Retourne l'id de l'autorisant."""
@@ -277,11 +289,11 @@ def cancel_order(
 ) -> Order:
     order = _editable_order(db, order_id)
     if order.paid_xof > 0:
-        # annulation d'une commande entamée = remboursement tracé (lot Paiements)
+        # annuler d'abord les paiements (DELETE /orders/{id}/payments/{payment_id})
         raise OrderNotEditableError(
             meta={"order_id": str(order.id), "reason": "has_payments", "paid_xof": order.paid_xof}
         )
-    granted_by = _authorize(db, user, override_token, CANCEL_ACTION)
+    granted_by = authorize_manager(db, user, override_token, CANCEL_ACTION)
     before_status = order.status
     order.status = OrderStatus.CANCELLED
     order.cancelled_reason = reason
@@ -303,3 +315,28 @@ def cancel_order(
     )
     db.commit()
     return order
+
+
+def reprint(
+    db: Session, order_id: uuid.UUID, *, agent: Printer, user_id: uuid.UUID, ctx: RequestContext
+) -> OrderOut:
+    """Ré-imprime le dernier ticket **tel que remis au client** (le contenu stocké, jamais
+    ré-rendu depuis l'état courant : un retrait ou un avoir ultérieur ne doit pas changer
+    rétroactivement ce que montre une ré-impression)."""
+    order = get_order(db, order_id)
+    previous = print_jobs_repo.latest_receipt_for_order(db, order.id)
+    if previous is None or not previous.rendered:
+        raise NoReceiptToReprintError(meta={"order_id": str(order_id)})
+    printing_service.create_and_print(
+        db,
+        job_type=PrintJobType.RECEIPT,
+        agent=agent,
+        rendered=previous.rendered,
+        open_drawer=False,
+        order_id=order.id,
+        payload=previous.payload,
+        is_reprint=True,
+        user_id=user_id,
+        ctx=ctx,
+    )
+    return to_out(db, order)

@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Path, Query, status
 from sqlalchemy.orm import Session
 
-from caisse.deps import Ctx, CurrentUser, DbSession, OverrideTokenHeader
+from caisse.deps import Ctx, CurrentUser, DbSession, OverrideTokenHeader, PrintAgentDep
 from caisse.domain.enums import OrderStatus, UserRole, role_at_least
 from caisse.errors import InsufficientPrivilegeError
 from caisse.repositories import orders as orders_repo
@@ -170,3 +170,16 @@ def cancel_order(
         db, order_id, reason=body.reason, user=user, override_token=override_token, ctx=ctx
     )
     return _result(db, order_id)
+
+
+@router.post("/{order_id}/reprint", response_model=OrderResult, summary="Ré-imprimer le ticket")
+def reprint(
+    order_id: OrderId, user: CurrentUser, db: DbSession, ctx: Ctx, agent: PrintAgentDep
+) -> OrderResult:
+    """Ré-imprime le dernier ticket tel que remis au client (tracé, compté dans les contrôles
+    X/Z). N'ouvre pas le tiroir.
+
+    Erreurs : `404 NOT_FOUND`, `409 NO_RECEIPT_TO_REPRINT` (aucun ticket encore imprimé).
+    """
+    order_out = order_service.reprint(db, order_id, agent=agent, user_id=user.id, ctx=ctx)
+    return OrderResult(order=order_out)

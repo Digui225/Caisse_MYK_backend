@@ -18,14 +18,22 @@ class PrinterStatus:
     width: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class PrintResult:
+    printed: bool
+    drawer_opened: bool
+
+
 class Printer(Protocol):
     def status(self) -> PrinterStatus: ...
 
     def print(
         self, content: str, *, qr: str | None, open_drawer: bool, cut: bool = True
-    ) -> None: ...
+    ) -> PrintResult: ...
 
     def open_drawer(self) -> None: ...
+
+    def test_print(self) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,8 +54,8 @@ class FneResult:
     items: tuple[FneItemRef, ...]
     amount_ttc: int | None
     vat_amount: int | None
-    balance_sticker: int | None
-    sticker_warning: bool
+    balance_funds_xof: int | None  # `balance_funds` : solde prépayé, remplace `balance_sticker`
+    low_balance_warning: bool  # `warning` : seuil d'alerte fixé par la DGI
     raw: dict[str, Any]
 
 

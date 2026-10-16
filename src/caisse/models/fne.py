@@ -57,7 +57,9 @@ class FneDocument(UUIDPk, Timestamps, Base):
     # [{"order_item_id", "fne_item_id", "quantity"}] : lignes certifiées, pour les avoirs
     items_map: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
     fne_amount_ttc_xof: Mapped[int | None]
-    sticker_balance: Mapped[int | None]
+    # solde prépayé FNE et alerte DGI relevés à la certification
+    balance_funds_xof: Mapped[int | None]
+    low_balance_warning: Mapped[bool] = mapped_column(default=False, server_default=false())
     # issue inconnue (délai dépassé, 500…) : jamais de renvoi automatique (PLAN-FNE D5)
     is_uncertain: Mapped[bool] = mapped_column(default=False, server_default=false())
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(

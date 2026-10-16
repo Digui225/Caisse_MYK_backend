@@ -1,20 +1,44 @@
-# Endpoints testables — état au 01/10/2026
+# Endpoints testables — état au 06/10/2026
 
-Ce document décrit les **41 routes réellement implémentées** dans `caisse-backend`, telles que le code les expose aujourd'hui. Le contrat cible complet est dans [`03-CONTRAT-API.md`](../../projet_caisse_MYK/03-CONTRAT-API.md). Toute route du contrat absente d'ici renvoie `404 NOT_FOUND`.
+Ce document décrit les **routes réellement implémentées** dans `caisse-backend`, telles que le code les expose aujourd'hui. Le contrat cible complet est dans [`03-CONTRAT-API.md`](../../projet_caisse_MYK/03-CONTRAT-API.md). Toute route du contrat absente d'ici renvoie `404 NOT_FOUND`.
 
-## Nouveautés du 01/10/2026 — à lire en premier (front)
+## Nouveautés du 06/10/2026 — impression (ticket, tiroir)
+
+| Sujet | Ce qui change pour le front | Où |
+|---|---|---|
+| **Ticket imprimé à l'encaissement** | `receipt` n'est plus toujours `null` : dès que la commande passe `PAID`, `POST /orders/{id}/payments` renvoie `receipt: {print_job_id, status, drawer_opened}`. Le tiroir s'ouvre à ce moment-là. | [§8](#8-paiements) |
+| **Ticket Z imprimé à la clôture** | `print_job_id` de `POST /cash-sessions/{id}/close` et `GET /cash-sessions/{id}/z-report` n'est plus toujours `null`. N'ouvre pas le tiroir. | [§6](#6-sessions-de-caisse) |
+| **Ré-impression** | `POST /orders/{id}/reprint` : réimprime le dernier ticket **tel que remis au client** (jamais ré-rendu depuis l'état courant). N'ouvre pas le tiroir, compté dans `controls.reprints` (X/Z). | [§7](#7-commandes) |
+| **Nouvelle section** | `/printing/*` : état de l'agent et de la file, ouverture manuelle du tiroir, rejeu d'un travail en échec, ticket de test. | [§10](#10-impression) |
+| **L'imprimante reste informative** | Une panne d'impression (agent ou imprimante hors ligne) **ne bloque jamais** une vente ni une clôture : `receipt.status` passe à `FAILED`/`QUEUED`, `drawer_opened: false`, et c'est tout — `201`/`201` comme si tout allait bien. Seules les actions directes (`/printing/open-drawer`, `/printing/test`) renvoient une erreur `503`. | [§10](#10-impression) |
+| **Toujours pas là** | Impression des tickets cuisine/serveur (hors MVP), impression A4 de la FNE (gérée par le front via `qr_payload`, inchangé). | — |
+| **FNE : alerte de solde** (changement de `meta`) | `FNE_STICKER_LOW` garde son code, mais se déclenche sur l'alerte renvoyée par la DGI et porte désormais `meta.balance_funds_xof` (solde prépayé en XOF, peut être `null`) au lieu de `meta.balance_sticker`. La DGI ne compte plus en stickers. | [§9](#9-clients-entreprise-et-fne) |
+
+## Nouveautés du 02/10/2026 — encaissement (front)
+
+| Sujet | Ce qui change pour le front | Où |
+|---|---|---|
+| **Encaissement disponible** | `POST /orders/{id}/payments` (idempotent, partiel ou mixte, rendu monnaie), `GET /payment-methods`, `DELETE /orders/{id}/payments/{payment_id}` (annulation d'un paiement saisi par erreur). Plus besoin de solder les commandes en base pour tester la FNE. | [§8](#8-paiements) |
+| **Nouveau champ** | `order.payments[]` dans toutes les réponses de commande (paiements annulés compris, `status: VOIDED`). | [§7](#7-commandes), [§8](#8-paiements) |
+| **Réponse de paiement** | `receipt` et `fiscal_document` valent **toujours `null`** : pas encore d'impression, et la FNE reste à la demande. | [§8](#8-paiements) |
+| **Nouveaux codes d'erreur** | `PAYMENT_EXCEEDS_DUE` (déjà au contrat), `PAYMENT_METHOD_DISABLED`, `PAYMENT_NOT_VOIDABLE` ; `ORDER_NOT_EDITABLE` avec `meta.reason = "nothing_due"`. | [§0 Erreurs](#format-des-erreurs-applicationproblemjson) |
+| **Nouvel avertissement** | `FNE_ALREADY_ISSUED` à l'annulation d'un paiement d'une commande qui a déjà une FNE. | [§8](#8-paiements) |
+| **Écran d'avoir FNE** | Non prioritaire (rare au restaurant). | [§9](#9-clients-entreprise-et-fne) |
+| **Pas encore là** | Remboursement d'une commande soldée (`POST /orders/{id}/refunds`) ; ticket de caisse et tiroir (`/printing/*`) : fait depuis le 06/10/2026, voir [§10](#10-impression). | [§12](#12-pas-encore-testable) |
+
+## Nouveautés du 01/10/2026 — FNE et TVA
 
 | Sujet | Ce qui change pour le front | Où |
 |---|---|---|
 | **TVA à 0 %** | Le restaurant est au **régime TEE** (confirmé) : tous les produits sont à `vat_rate: 0.0`, donc `total_ht_xof` = `total_ttc_xof` et `total_vat_xof` = 0 partout (commandes, X, Z). Prévoir de masquer la ligne « TVA » ou d'afficher la mention du régime (à valider avec le comptable). | [§0 Montants](#montants) |
-| **FNE à la demande** | La FNE n'est **plus émise à l'encaissement** : écart avec le contrat v1.1 §4.6, où la réponse de paiement porte un `fiscal_document`. Quand le lot Paiements arrivera, ce champ vaudra `null`. La FNE s'émet par un bouton dédié : `POST /orders/{id}/fne`. | [§8](#8-clients-entreprise-et-fne) |
-| **Clients entreprise** | `GET/POST /customers` : recherche par NCC, création avec contrôle du format (7 chiffres + 1 lettre). | [§8](#8-clients-entreprise-et-fne) |
-| **Nouvelle valeur d'énumération** | `FneDocument.type` : `FNE` **ou `REFUND`** (avoir). Contrat §6 : prévoir un cas par défaut. | [§8](#8-clients-entreprise-et-fne) |
-| **Nouveau champ** | `is_uncertain` sur un document FNE : issue inconnue, action du responsable requise. Le statut reste `SUBMITTING` (aucune valeur de statut ajoutée). | [§8](#8-clients-entreprise-et-fne) |
+| **FNE à la demande** | La FNE n'est **plus émise à l'encaissement** : écart avec le contrat v1.1 §4.6, où la réponse de paiement porte un `fiscal_document`. Dans la réponse de paiement, ce champ vaut toujours `null`. La FNE s'émet par un bouton dédié : `POST /orders/{id}/fne`. | [§9](#9-clients-entreprise-et-fne) |
+| **Clients entreprise** | `GET/POST /customers` : recherche par NCC, création avec contrôle du format (7 chiffres + 1 lettre). | [§9](#9-clients-entreprise-et-fne) |
+| **Nouvelle valeur d'énumération** | `FneDocument.type` : `FNE` **ou `REFUND`** (avoir). Contrat §6 : prévoir un cas par défaut. | [§9](#9-clients-entreprise-et-fne) |
+| **Nouveau champ** | `is_uncertain` sur un document FNE : issue inconnue, action du responsable requise. Le statut reste `SUBMITTING` (aucune valeur de statut ajoutée). | [§9](#9-clients-entreprise-et-fne) |
 | **Nouveaux codes d'erreur** | `CUSTOMER_NCC_EXISTS`, `FNE_ORDER_NOT_PAID`, `FNE_NOT_CONFIGURED`, `FNE_DOCUMENT_STATE`, `FNE_REFUND_EXCEEDS`, et les `422 FNE_*` de traduction. | [§0 Erreurs](#format-des-erreurs-applicationproblemjson) |
-| **Nouveaux avertissements** | Dans `warnings[]` (HTTP 200/201) : `FNE_REJECTED` (déjà au contrat), `FNE_UNCERTAIN`, `FNE_QUEUED`, `FNE_STICKER_LOW`. | [§8](#8-clients-entreprise-et-fne) |
-| **Routes ajoutées hors contrat** (non cassantes) | `GET /orders/{id}/fne`, `POST /fne/documents/{id}/resolve`, `POST /fne/documents/{id}/refund`. | [§8](#8-clients-entreprise-et-fne) |
-| **Impression de la FNE** | En **A4**, pas sur le ticket 80 mm : ouvrir `qr_payload` (page de vérification de la DGI) et l'imprimer depuis le navigateur. | [§8](#8-clients-entreprise-et-fne) |
+| **Nouveaux avertissements** | Dans `warnings[]` (HTTP 200/201) : `FNE_REJECTED` (déjà au contrat), `FNE_UNCERTAIN`, `FNE_QUEUED`, `FNE_STICKER_LOW`. | [§9](#9-clients-entreprise-et-fne) |
+| **Routes ajoutées hors contrat** (non cassantes) | `GET /orders/{id}/fne`, `POST /fne/documents/{id}/resolve`, `POST /fne/documents/{id}/refund`. | [§9](#9-clients-entreprise-et-fne) |
+| **Impression de la FNE** | En **A4**, pas sur le ticket 80 mm : ouvrir `qr_payload` (page de vérification de la DGI) et l'imprimer depuis le navigateur. | [§9](#9-clients-entreprise-et-fne) |
 
 ## Sommaire
 
@@ -28,15 +52,17 @@ Ce document décrit les **41 routes réellement implémentées** dans `caisse-ba
 | 5 | [Tables](#5-tables) | `GET /tables`, `GET /tables/board` | Salle et plan de salle (écran d'accueil) |
 | 6 | [Sessions de caisse](#6-sessions-de-caisse) | `GET /cash-sessions/current`, `POST /cash-sessions`, `GET …/{id}/x-report`, `POST …/{id}/close`, `GET …/{id}/z-report`, `GET /cash-sessions`, `POST …/{id}/movements` | Ouverture, mouvements de tiroir, rapports X et Z, clôture |
 | 7 | [Commandes](#7-commandes) | `POST /orders`, `GET /orders`, `GET /orders/{id}`, `POST …/{id}/items`, `PATCH …/items/{item_id}`, `DELETE …/items/{item_id}`, `POST …/{id}/cancel` | Prise de commande, lignes (ajout, quantité, retrait), annulation sous autorisation |
-| 8 | [Clients entreprise et FNE](#8-clients-entreprise-et-fne) | `GET/POST /customers`, `POST/GET /orders/{id}/fne`, `GET /fne/documents`, `POST …/{id}/retry`, `POST …/{id}/resolve`, `POST …/{id}/refund`, `GET …/{id}/duplicate`, `GET /fne/pending-count`, `GET /fne/daily-summary` | Facture normalisée DGI à la demande, avoirs, suivi |
-| 9 | [Scénario de test complet](#9-scénario-de-test-complet-curl--jq) | — | Tout le parcours en curl, de la connexion à la clôture |
-| 10 | [Pas encore testable](#10-pas-encore-testable) | — | Routes du contrat pas encore implémentées |
+| 8 | [Paiements](#8-paiements) | `GET /payment-methods`, `POST /orders/{id}/payments`, `DELETE /orders/{id}/payments/{payment_id}` | Encaissement partiel ou mixte, rendu monnaie, annulation d'un paiement |
+| 9 | [Clients entreprise et FNE](#9-clients-entreprise-et-fne) | `GET/POST /customers`, `POST/GET /orders/{id}/fne`, `GET /fne/documents`, `POST …/{id}/retry`, `POST …/{id}/resolve`, `POST …/{id}/refund`, `GET …/{id}/duplicate`, `GET /fne/pending-count`, `GET /fne/daily-summary` | Facture normalisée DGI à la demande, avoirs, suivi |
+| 10 | [Impression](#10-impression) | `GET /printing/status`, `POST /printing/open-drawer`, `GET /printing/jobs`, `POST …/{id}/retry`, `POST /printing/test` | État de l'agent et de la file, actions directes |
+| 11 | [Scénario de test complet](#11-scénario-de-test-complet-curl--jq) | — | Tout le parcours en curl, de la connexion à la clôture |
+| 12 | [Pas encore testable](#12-pas-encore-testable) | — | Routes du contrat pas encore implémentées |
 
 **Par où commencer :**
 
 1. Préparer la base avec `docker compose exec api python -m caisse.cli …` : `bootstrap` (caisse n° 1), `create-user` (un ADMIN), `seed --demo` (menu + 15 tables).
 2. Ouvrir Swagger (http://localhost:8001/docs), se connecter avec `POST /auth/login`, coller l'`access_token` dans **Authorize**.
-3. Suivre le parcours d'une journée : ouvrir la caisse (§6) → prendre des commandes (§7) → clôturer (§6). Le [§9](#9-scénario-de-test-complet-curl--jq) fait la même chose en curl.
+3. Suivre le parcours d'une journée : ouvrir la caisse (§6) → prendre des commandes (§7) → encaisser (§8) → clôturer (§6). Le [§11](#11-scénario-de-test-complet-curl--jq) fait la même chose en curl.
 
 ---
 
@@ -123,13 +149,20 @@ Le front doit se fier à **`code`**, qui est stable. `title` et `detail` sont de
 | `BUSINESS_DATE_MISMATCH` | 409 | Une session clôturée existe déjà pour cette journée comptable ; rejouer avec `confirm_business_date: true` |
 | `IDEMPOTENCY_CONFLICT` | 409 | Même `Idempotency-Key`, corps différent |
 | `TABLE_ALREADY_OCCUPIED` | 409 | La table porte déjà une commande active (`meta.order_id` : celle à ouvrir) |
-| `ORDER_NOT_EDITABLE` | 409 | Commande soldée ou annulée (`meta.status`), ou modification qui ferait passer le total sous le montant déjà encaissé |
+| `ORDER_NOT_EDITABLE` | 409 | Commande soldée ou annulée (`meta.status`), modification qui ferait passer le total sous le montant déjà encaissé, ou paiement sans reste dû (`meta.reason = "nothing_due"`) |
+| `PAYMENT_EXCEEDS_DUE` | 422 | Montant supérieur au reste dû (`meta.due_xof`, `meta.amount_xof`) |
+| `PAYMENT_METHOD_DISABLED` | 422 | Moyen de paiement non proposé par la caisse (`payments.methods`) |
+| `PAYMENT_NOT_VOIDABLE` | 409 | Paiement impossible à annuler (`meta.reason`) |
 | `CUSTOMER_NCC_EXISTS` | 409 | NCC déjà enregistré (`meta.customer_id` : client à réutiliser) |
 | `FNE_ORDER_NOT_PAID` | 409 | FNE demandée sur une commande non soldée |
 | `FNE_NOT_CONFIGURED` | 409 | Paramètres `fne.point_of_sale` / `fne.establishment` vides (`meta.missing_settings`) |
 | `FNE_DOCUMENT_STATE` | 409 | Action interdite dans l'état du document FNE (`meta.reason`) |
 | `FNE_CUSTOMER_REQUIRED`, `FNE_NCC_REQUIRED`, `FNE_NO_PAYMENT`, `FNE_VAT_RATE_UNMAPPED`, `FNE_PAYMENT_METHOD_UNMAPPED`, `FNE_FIELD_REQUIRED` | 422 | Commande impossible à traduire en FNE (client, NCC, paiement, taux de TVA, client de passage non paramétré) |
 | `FNE_REFUND_EXCEEDS` | 422 | Avoir supérieur à la quantité certifiée restante (`meta.available`) |
+| `NO_RECEIPT_TO_REPRINT` | 409 | `POST /orders/{id}/reprint` sur une commande sans ticket déjà imprimé |
+| `PRINT_JOB_NOT_RETRYABLE` | 409 | `POST /printing/jobs/{id}/retry` sur un travail déjà `DONE` ou en cours |
+| `PRINTER_UNAVAILABLE` | 503 | Action directe (`/printing/open-drawer`, `/printing/test`) : l'agent répond, l'imprimante non. **Jamais** renvoyé par `/orders/{id}/payments` ou `/cash-sessions/{id}/close` : voir [§10](#10-impression). |
+| `PRINT_AGENT_UNAVAILABLE` | 503 | Action directe : l'agent d'impression lui-même est injoignable. Mêmes réserves que ci-dessus. |
 | `INTERNAL_ERROR` | 500 | Erreur imprévue. La trace est dans les logs, jamais dans la réponse. |
 
 ---
@@ -637,9 +670,7 @@ Quand une table a une commande active (`OPEN` ou `PARTIALLY_PAID`) :
 | `summary.orders_count` | Nombre de commandes payées de la journée |
 | `summary.open_orders` | Nombre de commandes encore ouvertes |
 
-À tester : ouvrir une session ([§6](#6-sessions-de-caisse)) → `business_date` se remplit ; créer une commande sur une table ([§7](#7-commandes)) → la table passe en `OCCUPIED` avec son total, et `summary.open_orders` augmente ; l'annuler → la table redevient `FREE`.
-
-> **Limite actuelle :** l'encaissement n'existe pas encore, donc aucune commande ne peut être `PAID` : `revenue_today_xof` et `orders_count` restent à `0`.
+À tester : ouvrir une session ([§6](#6-sessions-de-caisse)) → `business_date` se remplit ; créer une commande sur une table ([§7](#7-commandes)) → la table passe en `OCCUPIED` avec son total, et `summary.open_orders` augmente ; l'encaisser ([§8](#8-paiements)) ou l'annuler → la table redevient `FREE` ; une fois soldée, la commande compte dans `revenue_today_xof` et `orders_count`.
 
 ---
 
@@ -726,7 +757,7 @@ Réponse `200` (`XReportOut`) : agrégats de la session **en cours**, recalculé
 
 Seules les commandes **soldées** (`PAID`) comptent dans le chiffre d'affaires et la ventilation par groupe fiscal ; `controls` compte les commandes annulées et les lignes retirées.
 
-> Tant que l'encaissement n'est pas implémenté ([§9](#9-pas-encore-testable)), aucune commande n'est `PAID` : les montants de `totals` restent à zéro et `expected_cash_xof` ne reflète que `opening_float_xof` et les mouvements de tiroir. `controls.cancelled_orders` et `controls.removed_items`, eux, sont déjà testables.
+> `by_payment_method` additionne les paiements enregistrés ([§8](#8-paiements)), y compris ceux d'une commande pas encore soldée ; les paiements annulés (`VOIDED`) n'y figurent pas. Dans `expected_cash_xof`, les espèces comptent pour `amount_xof` (ce qui reste dans le tiroir), pas pour la somme remise.
 
 | Code | Cas |
 |---|---|
@@ -757,11 +788,11 @@ Réponse `201` (`ZReportOut`) :
   "counted_cash_xof": 23000,
   "variance_xof": 0,
   "totals": { "...": "identique à x-report, figé" },
-  "print_job_id": null
+  "print_job_id": "9e2f…"
 }
 ```
 
-`expected_cash_xof = opening_float_xof + encaissements espèces + entrées − sorties de tiroir`. `print_job_id` reste `null` tant que l'impression ([§9](#9-pas-encore-testable)) n'est pas implémentée.
+`expected_cash_xof = opening_float_xof + encaissements espèces + entrées − sorties de tiroir`. `print_job_id` est le ticket Z imprimé **une seule fois**, à la clôture ([§10](#10-impression)) ; `GET /cash-sessions/{id}/z-report` renvoie toujours le même id. N'ouvre pas le tiroir.
 
 | Code | Cas | `meta` |
 |---|---|---|
@@ -869,7 +900,8 @@ Une commande est toujours rattachée à la **session de caisse ouverte** et à s
         "note": "bien cuit",
         "added_at": "2026-09-30T12:05:02Z"
       }
-    ]
+    ],
+    "payments": []
   },
   "warnings": []
 }
@@ -927,7 +959,7 @@ Utile pour retrouver les ventes à emporter en cours, qui n'apparaissent pas sur
 
 ### `GET /orders/{id}` — détail
 
-Réponse `200` : l'objet `order` complet, avec ses lignes actives. Erreur : `404 NOT_FOUND`.
+Réponse `200` : l'objet `order` complet, avec ses lignes actives et ses paiements (§8). Erreur : `404 NOT_FOUND`.
 
 ### `POST /orders/{id}/items` — ajouter une ligne
 
@@ -1024,19 +1056,157 @@ Réponse `200` : `OrderResult` avec `status: "CANCELLED"`, `cancelled_at` et `ca
 |---|---|---|
 | `403 OVERRIDE_REQUIRED` | Caissier sans jeton valide | `action`, `reason` |
 | `404 NOT_FOUND` | Commande inconnue | |
-| `409 ORDER_NOT_EDITABLE` | Déjà soldée ou annulée (`status`), ou paiements déjà enregistrés (`reason: "has_payments"` — l'annulation avec remboursement viendra avec l'encaissement) | |
+| `409 ORDER_NOT_EDITABLE` | Déjà soldée ou annulée (`status`), ou paiements déjà enregistrés (`reason: "has_payments"` : les annuler d'abord, §8) | |
 
 À tester : caissier sans jeton → `403` ; avec le jeton du responsable → `200` ; **rejouer le même jeton** sur une autre commande → `403` ; responsable sans jeton → `200`.
 
 Trace dans `audit_logs` : `order.cancel`, avec le caissier (`user_id`) **et** le responsable qui a autorisé (`acting_as_user_id`).
 
-Trace dans `audit_logs` : `order.cancel`.
+> **Clôture de caisse :** une commande `OPEN` ou `PARTIALLY_PAID` bloque la clôture (`409 SESSION_HAS_OPEN_ORDERS`) : l'encaisser (§8) ou l'annuler avant de clôturer.
 
-> **Clôture de caisse :** une commande `OPEN` bloque la clôture (`409 SESSION_HAS_OPEN_ORDERS`). Tant que l'encaissement n'existe pas, il faut **annuler** les commandes de test avant de clôturer.
+### `POST /orders/{id}/reprint` — ré-imprimer le ticket
+
+**Accès** : connecté.
+
+Réimprime le **dernier ticket tel que remis au client** : le contenu déjà stocké, jamais re-rendu depuis l'état courant de la commande (un retrait ou un avoir ultérieur ne doit pas changer rétroactivement une ré-impression). N'ouvre pas le tiroir. Compté dans `controls.reprints` (X/Z, §6).
+
+Réponse `200` : `OrderResult` (pas de corps à envoyer).
+
+| Code | Cas |
+|---|---|
+| `404 NOT_FOUND` | Commande inconnue |
+| `409 NO_RECEIPT_TO_REPRINT` | Aucun ticket encore imprimé pour cette commande (ex. commande pas encore soldée) |
+
+Trace dans `audit_logs` : `print_job.print`.
 
 ---
 
-## 8. Clients entreprise et FNE
+## 8. Paiements
+
+**Accès : connecté** pour encaisser ; l'annulation d'un paiement demande un responsable (ou un caissier avec un `X-Override-Token`).
+
+Une addition se règle en **un ou plusieurs paiements** (paiement partiel ou mixte : espèces + Mobile Money…). Chaque paiement réduit le reste dû ; quand il tombe à 0, la commande passe `PAID` et **la table est libérée**. Le backend recalcule toujours `paid_xof` et `due_xof` à partir des paiements enregistrés.
+
+### Parcours d'écran conseillé
+
+1. Bouton « Encaisser » sur une commande `OPEN` / `PARTIALLY_PAID` qui a un reste dû (`due_xof > 0`).
+2. Boutons de moyens de paiement : `GET /payment-methods` (au chargement de l'application, la liste change rarement).
+3. Montant proposé par défaut : `due_xof`. La caissière peut le baisser (paiement partiel), jamais le dépasser.
+4. **Espèces** (`gives_change: true`) : saisir la somme remise (`tendered_xof`) ; afficher en grand la **monnaie à rendre** (`payment.change_xof`).
+5. **Mobile Money** : choisir l'opérateur (`providers`) et, si possible, saisir le n° de transaction (`reference`).
+6. Générer l'`Idempotency-Key` **avant** l'appel et la réutiliser telle quelle en cas de nouvel essai (coupure réseau, double clic) : la caisse n'enregistre jamais deux fois le même paiement.
+7. Réponse : `order.status = "PAID"` → écran « Commande soldée » avec le bouton « Émettre la FNE » (§9). `PARTIALLY_PAID` → rester sur l'encaissement avec le nouveau reste dû.
+
+> **Ticket et tiroir :** `receipt` vaut `null` tant que la commande n'est pas soldée (paiement partiel). Dès que `due_xof` tombe à 0, `receipt: {print_job_id, status, drawer_opened}` est rempli et le tiroir s'ouvre (§10). Une imprimante hors ligne ne bloque jamais la vente : `status` vaut alors `FAILED` et `drawer_opened: false`, mais la réponse reste `201`. **FNE :** `fiscal_document` vaut toujours `null` : elle s'émet à la demande (§9).
+
+### `GET /payment-methods` — moyens de paiement
+
+Réponse `200`, dans l'ordre d'affichage (paramètre `payments.methods`) :
+
+```json
+[
+  { "method": "CASH", "label": "Espèces", "gives_change": true, "providers": [] },
+  { "method": "MOBILE_MONEY", "label": "Mobile Money", "gives_change": false,
+    "providers": ["ORANGE", "MTN", "MOOV", "WAVE"] },
+  { "method": "CARD", "label": "Carte bancaire", "gives_change": false, "providers": [] },
+  { "method": "BANK_TRANSFER", "label": "Virement", "gives_change": false, "providers": [] },
+  { "method": "CREDIT", "label": "Paiement différé", "gives_change": false, "providers": [] }
+]
+```
+
+`OTHER` existe mais n'est pas proposé par défaut : il n'a pas de code FNE.
+
+### `POST /orders/{id}/payments` — encaisser
+
+En-tête **obligatoire** : `Idempotency-Key: <uuid>`.
+
+| Champ | Type | Contraintes |
+|---|---|---|
+| `method` | texte | Un des `method` de `GET /payment-methods` |
+| `amount_xof` | entier | > 0 et ≤ `due_xof` : la part imputée à l'addition |
+| `tendered_xof` | entier \| `null` | **Espèces uniquement**, ≥ `amount_xof` : somme remise par le client |
+| `provider` | texte \| `null` | **Obligatoire en Mobile Money** (`ORANGE`, `MTN`, `MOOV`, `WAVE`), interdit sinon |
+| `reference` | texte \| `null` | N° de transaction, 64 caractères au plus |
+
+```json
+{ "method": "CASH", "amount_xof": 5000, "tendered_xof": 10000 }
+```
+
+Réponse `201` :
+
+```json
+{
+  "payment": {
+    "id": "3c4d…", "method": "CASH", "provider": null,
+    "amount_xof": 5000, "tendered_xof": 10000, "change_xof": 5000, "reference": null,
+    "status": "CAPTURED", "created_at": "2026-10-02T13:10:00Z",
+    "voided_at": null, "void_reason": null
+  },
+  "order": { "…": "…", "status": "PARTIALLY_PAID", "total_ttc_xof": 9000,
+             "paid_xof": 5000, "due_xof": 4000, "payments": [ { "…": "…" } ] },
+  "receipt": null,
+  "fiscal_document": null,
+  "warnings": []
+}
+```
+
+Second paiement qui solde l'addition :
+
+```json
+{ "method": "MOBILE_MONEY", "provider": "WAVE", "amount_xof": 4000, "reference": "TX8812" }
+```
+
+→ `order.status: "PAID"`, `due_xof: 0`, `paid_at` renseigné, et cette fois :
+
+```json
+{
+  "receipt": { "print_job_id": "9e2f…", "status": "DONE", "drawer_opened": true },
+  "fiscal_document": null
+}
+```
+
+Imprimante hors ligne : la vente reste `201`, mais `"status": "FAILED"` (ou `"QUEUED"`) et `"drawer_opened": false` — à signaler explicitement à la caissière (§10).
+
+**Rejeu** de la même clé avec le même corps → `200`, en-tête `Idempotent-Replay: true`, **réponse d'origine à l'identique** (même si la commande a changé depuis), aucun nouveau paiement.
+
+| Code | Cas | `meta` |
+|---|---|---|
+| `404 NOT_FOUND` | Commande inconnue | |
+| `409 ORDER_NOT_EDITABLE` | Commande soldée ou annulée (`status`), ou rien à payer (`reason: "nothing_due"`) | |
+| `422 PAYMENT_EXCEEDS_DUE` | Montant supérieur au reste dû | `due_xof`, `amount_xof` |
+| `422 PAYMENT_METHOD_DISABLED` | Moyen absent de `payments.methods` | `method` |
+| `422 VALIDATION_ERROR` | `tendered_xof` hors espèces ou inférieur au montant, `provider` manquant ou en trop, montant ≤ 0 | `fields` |
+| `409 NO_OPEN_SESSION` | Aucune session de caisse ouverte | |
+| `409 IDEMPOTENCY_CONFLICT` | Même clé, corps différent | `key` |
+
+Trace dans `audit_logs` : `payment.create`.
+
+### `DELETE /orders/{id}/payments/{payment_id}?reason=…` — annuler un paiement
+
+Sert à **corriger une erreur de saisie** (mauvais moyen, mauvais montant) : on annule puis on ré-encaisse correctement. Le paiement n'est jamais supprimé : il reste dans `order.payments` avec `status: "VOIDED"`, `voided_at` et `void_reason`, et sort des totaux (X, Z, reste dû).
+
+| Utilisateur | Condition |
+|---|---|
+| RESPONSABLE, ADMIN | Direct |
+| CAISSIER | En-tête `X-Override-Token` obtenu par `POST /auth/override` avec `"action": "payment.void"` |
+
+`reason` (paramètre de requête) est obligatoire. Réponse `200` : `OrderResult`, la commande redevient `PARTIALLY_PAID` (il reste des paiements) ou `OPEN`.
+
+Warning `FNE_ALREADY_ISSUED` (`meta.document_id`, `meta.status`) si la commande a déjà une FNE : rien n'est fait automatiquement. S'il s'agit seulement de corriger le moyen de paiement, l'ignorer ; si la vente est réellement annulée, prévenir le responsable qu'un avoir est à émettre (§9).
+
+| Code | Cas | `meta` |
+|---|---|---|
+| `403 OVERRIDE_REQUIRED` | Caissier sans jeton valide | `action`, `reason` |
+| `404 NOT_FOUND` | Commande ou paiement inconnu | |
+| `409 PAYMENT_NOT_VOIDABLE` | `reason` : `already_voided` ; `session_closed` (encaissé dans une session clôturée : le Z est figé) ; `table_reoccupied` (commande soldée dont la table a été rouverte, `order_id` de la nouvelle commande) | `payment_id`, `reason` |
+
+Trace dans `audit_logs` : `payment.void`, avec le caissier (`user_id`) et le responsable qui a autorisé (`acting_as_user_id`).
+
+> **Annuler une commande déjà entamée :** annuler d'abord ses paiements, puis `POST /orders/{id}/cancel`. Le remboursement d'une commande soldée (`POST /orders/{id}/refunds`) n'est pas prévu pour l'instant.
+
+---
+
+## 9. Clients entreprise et FNE
 
 La **FNE** (facture normalisée électronique) est certifiée par la plateforme de la DGI. Elle est émise **à la demande**, sur une commande soldée, jamais automatiquement à l'encaissement. Plan et décisions : [`PLAN-FNE.md`](PLAN-FNE.md).
 
@@ -1062,19 +1232,7 @@ La **FNE** (facture normalisée électronique) est certifiée par la plateforme 
    SQL
    ```
 
-3. **Solder une commande.** L'encaissement (lot L4) n'existe pas encore : on solde une commande de test directement en base (remplacer `<ORDER_ID>`) :
-
-   ```bash
-   docker exec -i infra-db sh -c 'psql -U "$POSTGRES_USER" -d caisse' <<'SQL'
-   INSERT INTO payments (id, order_id, cash_session_id, method, amount_xof, change_xof, status,
-                         idempotency_key, created_by_user_id, created_at)
-     SELECT gen_random_uuid(), o.id, o.cash_session_id, 'CASH', o.total_ttc_xof, 0, 'CAPTURED',
-            'test-' || o.id, o.opened_by_user_id, now()
-     FROM orders o WHERE o.id = '<ORDER_ID>';
-   UPDATE orders SET status = 'PAID', paid_xof = total_ttc_xof, due_xof = 0, paid_at = now()
-     WHERE id = '<ORDER_ID>';
-   SQL
-   ```
+3. **Solder une commande** par l'encaissement ([§8](#8-paiements)), par exemple en un seul paiement en espèces de `due_xof`.
 
 ### Statuts d'un document FNE
 
@@ -1104,10 +1262,10 @@ Un document incertain n'est **jamais** renvoyé sans vérification : l'API FNE n
    | `FAILED` (`FNE_REJECTED`) | « FNE refusée par la DGI », prévenir le responsable |
    | `SUBMITTING` + `is_uncertain` (`FNE_UNCERTAIN`) | « Résultat inconnu : **ne pas réessayer**, un responsable doit vérifier dans l'espace FNE » |
    | `MANUAL` | « À saisir dans l'application FNE » |
-   | warning `FNE_STICKER_LOW` | bandeau « stock de stickers bas » (`meta.balance_sticker`) |
+   | warning `FNE_STICKER_LOW` | bandeau « solde FNE bas, à recharger » (`meta.balance_funds_xof`, en XOF, peut être `null`) |
 
 5. **Barre d'état** : `GET /fne/pending-count` au même rythme que les autres rafraîchissements ; un badge si `pending > 0`, mis en avant si `uncertain > 0`.
-6. **Écran responsable** : `GET /fne/documents?status=…` avec les actions `retry` (QUEUED, FAILED), `resolve` (incertains) et `refund` (avoir).
+6. **Écran responsable** : `GET /fne/documents?status=…` avec les actions `retry` (QUEUED, FAILED) et `resolve` (incertains). L'action `refund` (avoir) est **secondaire** : voir plus bas.
 
 Ne jamais rejouer automatiquement `POST /orders/{id}/fne` côté front : un rappel est sans danger (même document renvoyé), mais il ne relance pas une FNE incertaine.
 
@@ -1248,7 +1406,11 @@ Rôle : RESPONSABLE. Après vérification dans l'espace FNE, rubrique « Reçus 
 
 ### `POST /fne/documents/{id}/refund` — avoir
 
-Rôle : RESPONSABLE. Avoir total ou partiel sur une FNE de vente certifiée par l'API :
+Rôle : RESPONSABLE. Avoir total ou partiel sur une FNE de vente certifiée par l'API .
+
+> **Écran non prioritaire.** Au restaurant, l'avoir est rare : il sert uniquement à corriger une FNE certifiée par erreur (mauvais client ou NCC, mauvaise commande, plat contesté après certification), car une FNE certifiée ne se supprime ni ne se modifie. Un simple bouton « Émettre un avoir » dans le détail d'une FNE certifiée, côté responsable, suffit ; il peut arriver après le reste du parcours FNE.
+
+Corps :
 
 ```json
 { "items": [{ "order_item_id": "…", "quantity": 1 }] }
@@ -1291,7 +1453,72 @@ Trace dans `audit_logs` : `customer.create`, `fne.issue`, `fne.submit` (à chaqu
 
 ---
 
-## 9. Scénario de test complet (curl + jq)
+## 10. Impression
+
+Préfixe : `/api/v1/printing`. Agent d'impression ESC/POS, hors Docker (`print-agent/`, ADR-13) : le voir en marche avec [`print-agent/README.md`](../print-agent/README.md) (mode factice sans imprimante branchée). L'imprimante est **toujours informative** : les tickets déclenchés par une vente ou une clôture (§6, §7, §8) n'échouent jamais la requête qui les déclenche. Seules les routes ci-dessous, demandées explicitement, renvoient une erreur.
+
+### `GET /printing/status` — état de l'impression
+
+**Accès** : connecté.
+
+```json
+{
+  "agent_online": true, "printer_online": true, "paper": "ok", "width": 48,
+  "queued_jobs": 0, "failed_jobs": 0, "last_success_at": "2026-10-06T12:04:10Z"
+}
+```
+
+Mêmes informations que `printer` et `queues` de `GET /health/ready` (§1), avec en plus la file (`queued_jobs`, `failed_jobs`) et la dernière impression réussie.
+
+### `POST /printing/open-drawer` — ouverture manuelle du tiroir
+
+**Accès** : RESPONSABLE. Hors vente (ex. correction de caisse), tracée dans `audit_logs` (`printing.open_drawer_manual`).
+
+Réponse `200` : `{ "drawer_opened": true }`.
+
+| Code | Cas |
+|---|---|
+| `503 PRINT_AGENT_UNAVAILABLE` | Agent injoignable |
+| `503 PRINTER_UNAVAILABLE` | Agent en ligne, imprimante en panne (papier…) |
+
+### `GET /printing/jobs?status=` — file d'impression
+
+**Accès** : connecté. `status` facultatif : `QUEUED`, `PRINTING`, `DONE`, `FAILED`.
+
+```json
+{
+  "items": [
+    { "id": "9e2f…", "type": "RECEIPT", "order_id": "0a1b…", "session_id": null,
+      "status": "FAILED", "attempts": 1, "last_error": "...", "is_reprint": false,
+      "created_at": "2026-10-06T12:04:10Z" }
+  ],
+  "next_cursor": null
+}
+```
+
+### `POST /printing/jobs/{id}/retry` — rejeu d'un travail en échec
+
+**Accès** : connecté. Réponse `200` : le travail avec son nouveau statut.
+
+| Code | Cas |
+|---|---|
+| `404 NOT_FOUND` | Travail inconnu |
+| `409 PRINT_JOB_NOT_RETRYABLE` | Déjà `DONE`, ou déjà en cours (`PRINTING`) |
+
+### `POST /printing/test` — ticket de test
+
+**Accès** : ADMIN. Imprime un ticket de diagnostic directement sur l'agent (hors file, pas de `PrintJob` créé). Réponse `200` : `{ "printed": true }`.
+
+| Code | Cas |
+|---|---|
+| `503 PRINT_AGENT_UNAVAILABLE` | Agent injoignable |
+| `503 PRINTER_UNAVAILABLE` | Agent en ligne, imprimante en panne |
+
+Trace dans `audit_logs` : `print_job.print` (ticket, Z, ré-impression), `printing.open_drawer_manual`, `printing.test`.
+
+---
+
+## 11. Scénario de test complet (curl + jq)
 
 À lancer dans un terminal. Remplacer `ADMIN_PIN` par le PIN de l'administrateur créé avec `caisse.cli create-user`.
 
@@ -1390,27 +1617,51 @@ curl -s -X DELETE "$API/orders/$ORDER_ID/items/$ITEM_ID?reason=erreur%20de%20sai
 curl -s -X POST $API/orders -H "Authorization: Bearer $CT" -H 'Content-Type: application/json' \
   -d '{"table_id":null}' | jq '.order | {order_number, counter_number}'
 
-# pas encore d'encaissement : annuler les commandes ouvertes (responsable) pour pouvoir clôturer
+# 10. Encaissement de la table 1 (reste dû : 7 000) : espèces avec rendu, puis Wave
+curl -s $API/payment-methods -H "Authorization: Bearer $CT" | jq -c '.[] | {method, providers}'
+PAY_KEY=$(cat /proc/sys/kernel/random/uuid)
+curl -s -X POST $API/orders/$ORDER_ID/payments -H "Authorization: Bearer $CT" -H "Idempotency-Key: $PAY_KEY" \
+  -H 'Content-Type: application/json' -d '{"method":"CASH","amount_xof":5000,"tendered_xof":10000}' \
+  | jq '{change: .payment.change_xof, status: .order.status, due: .order.due_xof}'
+# → change 5000, PARTIALLY_PAID, due 2000
+# rejeu de la même clé → 200 + Idempotent-Replay: true, aucun second paiement
+curl -si -X POST $API/orders/$ORDER_ID/payments -H "Authorization: Bearer $CT" -H "Idempotency-Key: $PAY_KEY" \
+  -H 'Content-Type: application/json' -d '{"method":"CASH","amount_xof":5000,"tendered_xof":10000}' \
+  | grep -i -E '^HTTP|Idempotent-Replay'
+# plus que le reste dû → 422 PAYMENT_EXCEEDS_DUE
+curl -s -X POST $API/orders/$ORDER_ID/payments -H "Authorization: Bearer $CT" \
+  -H "Idempotency-Key: $(cat /proc/sys/kernel/random/uuid)" -H 'Content-Type: application/json' \
+  -d '{"method":"CARD","amount_xof":3000}' | jq '{status, code, meta}'
+curl -s -X POST $API/orders/$ORDER_ID/payments -H "Authorization: Bearer $CT" \
+  -H "Idempotency-Key: $(cat /proc/sys/kernel/random/uuid)" -H 'Content-Type: application/json' \
+  -d '{"method":"MOBILE_MONEY","provider":"WAVE","amount_xof":2000,"reference":"TX8812"}' \
+  | jq '.order | {status, paid_xof, due_xof, paid_at}'
+# → PAID ; la table 1 est libérée
+curl -s $API/tables/board -H "Authorization: Bearer $CT" | jq '{summary, table1: (.tables[0] | {label, status})}'
+
+# la vente à emporter vide est annulée par le responsable
 RT=$(curl -s -X POST $API/auth/login -H 'Content-Type: application/json' \
   -d '{"pin":"222222","device_id":"poste-1"}' | jq -r .access_token)
 for ID in $(curl -s "$API/orders?status=OPEN" -H "Authorization: Bearer $CT" | jq -r '.items[].id'); do
   curl -s -X POST $API/orders/$ID/cancel -H "Authorization: Bearer $RT" -H 'Content-Type: application/json' \
     -d '{"reason":"test"}' | jq -c '.order | {order_number, status}'
 done
-curl -s $API/cash-sessions/$SESSION_ID/x-report -H "Authorization: Bearer $CT" | jq '.totals.controls'
-# → cancelled_orders: 2, removed_items: 1
+curl -s $API/cash-sessions/$SESSION_ID/x-report -H "Authorization: Bearer $CT" \
+  | jq '{expected_cash_xof, by_method: .totals.by_payment_method, controls: .totals.controls}'
+# → expected_cash_xof 23000 (20000 − 2000 + 5000), CASH 5000 + MOBILE_MONEY 2000,
+#   cancelled_orders: 1, removed_items: 1
 
 # clôture : Z n°1, écart nul si le comptage correspond
 curl -s -X POST $API/cash-sessions/$SESSION_ID/close -H "Authorization: Bearer $CT" \
   -H "Idempotency-Key: $(cat /proc/sys/kernel/random/uuid)" -H 'Content-Type: application/json' \
-  -d '{"counted_breakdown":{"10000":1,"5000":1,"1000":3},"notes":"RAS"}' | jq
+  -d '{"counted_breakdown":{"10000":2,"2000":1,"1000":1},"notes":"RAS"}' | jq
 
-# 10. Désactiver le caissier : son jeton est aussitôt refusé (401)
+# 11. Désactiver le caissier : son jeton est aussitôt refusé (401)
 curl -s -X PATCH $API/users/$CAISSIER_ID -H "$AUTH" -H 'Content-Type: application/json' \
   -d '{"is_active":false}' | jq '{full_name, is_active}'
 curl -s $API/auth/me -H "Authorization: Bearer $CT" | jq '{status, code}'
 
-# 11. Blocage progressif sur un poste dédié : 4 × 401 puis 423
+# 12. Blocage progressif sur un poste dédié : 4 × 401 puis 423
 for i in 1 2 3 4 5; do
   curl -s -X POST $API/auth/login -H 'Content-Type: application/json' \
     -d '{"pin":"999999","device_id":"poste-test"}' | jq -c '{status, code, meta}'
@@ -1424,18 +1675,17 @@ docker exec infra-db sh -c 'psql -U "$POSTGRES_USER" -d caisse -c \
   "select created_at, action, entity from audit_logs order by created_at desc limit 20"'
 ```
 
-> Le scénario laisse deux utilisateurs de test en base, dont un désactivé, plus une session de caisse clôturée et deux commandes annulées. Comme les PIN doivent être uniques et qu'il ne peut y avoir qu'une session ouverte à la fois, relancer le scénario tel quel renverra `409` à l'étape 4 pour « Resp Test » (la session, elle, sera déjà clôturée et ne bloque rien). Changer les PIN avant de le relancer.
+> Le scénario laisse deux utilisateurs de test en base, dont un désactivé, plus une session de caisse clôturée, une commande soldée et une annulée. Comme les PIN doivent être uniques et qu'il ne peut y avoir qu'une session ouverte à la fois, relancer le scénario tel quel renverra `409` à l'étape 4 pour « Resp Test » (la session, elle, sera déjà clôturée et ne bloque rien). Changer les PIN avant de le relancer.
 
 ---
 
-## 10. Pas encore testable
+## 12. Pas encore testable
 
 | Lot | Routes du contrat absentes |
 |---|---|
 | L2 | `POST/PATCH/DELETE /categories`, `POST/PATCH /products`, `PATCH /products/{id}/price`, `POST/PATCH /tables` |
-| L3 | `POST /orders/{id}/reprint` (arrivera avec la file d'impression) |
-| L4 | `/orders/{id}/payments`, `/refunds`, `/payment-methods`, `/printing/*` |
+| L4 | `POST /orders/{id}/refunds` (remboursement d'une commande soldée, reporté : rare au restaurant) |
 | L5 | `/stock/*` |
-| L6 | `GET /fne/daily-summary/{id}/export` (export du récapitulatif figé à la clôture) |
+| L6 | `GET /fne/daily-summary/{id}/export` (export du récapitulatif figé à la clôture), worker de renvoi automatique (le renvoi FNE/impression reste manuel pour l'instant) |
 | L5–L6 | `/reports/*` |
 | Admin | `/settings`, `/cash-registers` |
