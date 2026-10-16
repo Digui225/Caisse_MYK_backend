@@ -25,7 +25,7 @@ Durée : 55 min environ. Détail de chaque route : [`ENDPOINTS-TESTABLES.md`](EN
 **Bloc-notes** : garder un fichier texte ouvert pour y coller les identifiants au fur et à mesure :
 
 ```
-CAISSE      = 01a0d401-3fc5-710d-9436-4b9a236ca97b   (Caisse 1 de la base de dev)
+CAISSE      = 01a0d401-3fc5-710d-9436-4b9a236ca97b   (Caisse 1 de la base de dev ; sinon `GET /cash-registers`)
 SESSION     =
 TABLE_1     =
 POISSON     =   (Poisson braisé, 3 500)

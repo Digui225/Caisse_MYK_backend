@@ -12,10 +12,17 @@ from caisse.domain.enums import (
     PaymentMethod,
     PaymentStatus,
 )
-from caisse.models.cash_session import CashMovement, CashSession
+from caisse.models.cash_session import CashMovement, CashRegister, CashSession
 from caisse.models.order import Order, OrderItem
 from caisse.models.payment import Payment
 from caisse.models.print_job import PrintJob
+
+
+def list_registers(db: Session, *, is_active: bool | None = True) -> list[CashRegister]:
+    stmt = select(CashRegister).order_by(CashRegister.created_at, CashRegister.name)
+    if is_active is not None:
+        stmt = stmt.where(CashRegister.is_active.is_(is_active))
+    return list(db.scalars(stmt))
 
 
 def get(db: Session, session_id: uuid.UUID) -> CashSession | None:

@@ -16,7 +16,7 @@ from caisse.errors import (
     SessionHasOpenOrdersError,
     SessionNotClosedError,
 )
-from caisse.models.cash_session import CashMovement, CashSession
+from caisse.models.cash_session import CashMovement, CashRegister, CashSession
 from caisse.repositories import sessions as sessions_repo
 from caisse.repositories import settings as settings_repo
 from caisse.schemas.sessions import (
@@ -42,6 +42,9 @@ def open_session(
     actor_id: uuid.UUID,
     ctx: RequestContext,
 ) -> CashSession:
+    register = db.get(CashRegister, cash_register_id)
+    if register is None or not register.is_active:
+        raise NotFoundError(meta={"cash_register_id": str(cash_register_id)})
     if sessions_repo.get_open_for_register(db, cash_register_id) is not None:
         raise SessionAlreadyOpenError()
 

@@ -10,6 +10,7 @@ Les fonctions développées sur la branche `aziz` sont reprises ici **sous les r
 |---|---|---|
 | **Gestion du catalogue** | `POST /categories`, `PATCH/DELETE /categories/{id}`, `POST /products`, `GET/PATCH /products/{id}`, `PATCH /products/{id}/price` (motif obligatoire, historisé), `GET /products/{id}/price-history`. Rôle RESPONSABLE. **Chez aziz** : `/catalog/categories`, `/catalog/products`, `/catalog/products/{id}/price` avec `new_price_xof` → ici `/categories`, `/products`, `/products/{id}/price` avec `price_xof`. `GET /categories` accepte `is_active`. | [§4](#4-catalogue) |
 | **Tables** | `POST /tables`, `PATCH/DELETE /tables/{id}` (ADMIN, suppression logique), `GET /tables?is_active=`. **Chez aziz** : `DELETE` renvoie un message → ici la table. | [§5](#5-tables) |
+| **Paramètres et caisses** | `GET/PUT /settings` (lecture : connecté ; modification : ADMIN, seuls les champs envoyés changent) ; `GET/POST /cash-registers`, `PATCH /cash-registers/{id}`. **Chez aziz** : `/settings/registers` et un `DELETE` → ici `/cash-registers` et `PATCH {"is_active": false}`. Champs de `/settings` : mêmes noms que chez aziz pour l'établissement (`restaurant_name`, `ncc`, `rccm`, `address`, `phone`, `receipt_footer`, `default_vat_rate`, `screen_lock_timeout_seconds`), plus les moyens de paiement, les coupures et la FNE ; pas de `print_width` (réglé dans le `.env` de l'API). Ouvrir une session sur une caisse inconnue ou hors service renvoie `404` (avant : erreur 500). | [§13](#13-paramètres-et-caisses) |
 | **Partage de table** | `POST /orders` accepte `note_label` et `allow_multiple` (mêmes noms que chez aziz) ; `order.note_label` dans toutes les réponses de commande ; `GET /tables/board` ajoute `orders[]` et `total_ttc_xof` par table (**chez aziz** : `active_orders[]`, `is_occupied`) et garde `order` (la plus ancienne). Nouveau code `ORDER_LABEL_TAKEN`. Une table rouverte n'empêche plus d'annuler un paiement (`table_reoccupied` supprimé). | [§5](#5-tables), [§7](#7-commandes) |
 
 ## Nouveautés du 16/10/2026 — stock et tableaux de bord
@@ -45,7 +46,7 @@ Les fonctions développées sur la branche `aziz` sont reprises ici **sous les r
 | **Nouveaux codes d'erreur** | `PAYMENT_EXCEEDS_DUE` (déjà au contrat), `PAYMENT_METHOD_DISABLED`, `PAYMENT_NOT_VOIDABLE` ; `ORDER_NOT_EDITABLE` avec `meta.reason = "nothing_due"`. | [§0 Erreurs](#format-des-erreurs-applicationproblemjson) |
 | **Nouvel avertissement** | `FNE_ALREADY_ISSUED` à l'annulation d'un paiement d'une commande qui a déjà une FNE. | [§8](#8-paiements) |
 | **Écran d'avoir FNE** | Non prioritaire (rare au restaurant). | [§9](#9-clients-entreprise-et-fne) |
-| **Pas encore là** | Remboursement d'une commande soldée (`POST /orders/{id}/refunds`) ; ticket de caisse et tiroir (`/printing/*`) : fait depuis le 06/10/2026, voir [§10](#10-impression). | [§14](#14-pas-encore-testable) |
+| **Pas encore là** | Remboursement d'une commande soldée (`POST /orders/{id}/refunds`) ; ticket de caisse et tiroir (`/printing/*`) : fait depuis le 06/10/2026, voir [§10](#10-impression). | [§15](#15-pas-encore-testable) |
 
 ## Nouveautés du 01/10/2026 — FNE et TVA
 
@@ -78,15 +79,16 @@ Les fonctions développées sur la branche `aziz` sont reprises ici **sous les r
 | 10 | [Impression](#10-impression) | `GET /printing/status`, `POST /printing/open-drawer`, `GET /printing/jobs`, `POST …/{id}/retry`, `POST /printing/test` | État de l'agent et de la file, actions directes |
 | 11 | [Stock](#11-stock) | `GET/POST /stock/articles`, `GET/PATCH /stock/articles/{id}`, `POST /stock/receipts`, `POST /stock/losses`, `POST /stock/counts`, `GET /stock/movements`, `GET/PUT /products/{id}/components` | Articles, entrées, pertes, inventaires, fiches techniques (RESPONSABLE) |
 | 12 | [Tableaux de bord](#12-tableaux-de-bord) | `GET /reports/sales`, `GET /reports/stock` | Ventes et stock sur une période (ADMIN) |
-| 13 | [Scénario de test complet](#13-scénario-de-test-complet-curl--jq) | — | Tout le parcours en curl, de la connexion à la clôture |
-| 14 | [Pas encore testable](#14-pas-encore-testable) | — | Routes du contrat pas encore implémentées |
+| 13 | [Paramètres et caisses](#13-paramètres-et-caisses) | `GET/PUT /settings`, `GET/POST /cash-registers`, `PATCH /cash-registers/{id}` | Établissement, ticket, TVA, moyens de paiement, FNE ; caisses (ADMIN) |
+| 14 | [Scénario de test complet](#14-scénario-de-test-complet-curl--jq) | — | Tout le parcours en curl, de la connexion à la clôture |
+| 15 | [Pas encore testable](#15-pas-encore-testable) | — | Routes du contrat pas encore implémentées |
 
 **Par où commencer :**
 
 1. Préparer la base avec `docker compose exec api python -m caisse.cli …` : `bootstrap` (caisse n° 1), `create-user` (un ADMIN), `seed --demo` (menu + 15 tables).
 2. Ouvrir Swagger (http://localhost:8001/docs), se connecter avec `POST /auth/login`, coller l'`access_token` dans **Authorize**.
    Pour le menu réel du restaurant avec son stock : `import-catalog` puis `import-stock --stock-initial` (§11).
-3. Suivre le parcours d'une journée : ouvrir la caisse (§6) → prendre des commandes (§7) → encaisser (§8) → clôturer (§6). Le [§13](#13-scénario-de-test-complet-curl--jq) fait la même chose en curl.
+3. Suivre le parcours d'une journée : ouvrir la caisse (§6) → prendre des commandes (§7) → encaisser (§8) → clôturer (§6). Le [§14](#14-scénario-de-test-complet-curl--jq) fait la même chose en curl.
 
 ---
 
@@ -188,6 +190,8 @@ Le front doit se fier à **`code`**, qui est stable. `title` et `detail` sont de
 | `CATEGORY_NAME_EXISTS` | 409 | Catégorie déjà existante sous ce nom, sans la casse (`meta.category_id`) |
 | `CATEGORY_NOT_EMPTY` | 409 | Désactivation d'une catégorie qui a des produits actifs (`meta.active_products`) |
 | `ORDER_LABEL_TAKEN` | 409 | Étiquette déjà portée par une commande active de la table (`meta.order_id`) |
+| `CASH_REGISTER_NAME_EXISTS` | 409 | Caisse déjà existante sous ce nom (`meta.cash_register_id`) |
+| `CASH_REGISTER_HAS_OPEN_SESSION` | 409 | Désactivation d'une caisse dont une session est ouverte (`meta.session_id`) |
 | `TABLE_LABEL_EXISTS` | 409 | Table déjà existante sous ce libellé (`meta.table_id`) |
 | `TABLE_HAS_ACTIVE_ORDERS` | 409 | Désactivation d'une table qui porte des commandes en cours (`meta.order_ids`) |
 | `PRODUCT_NAME_EXISTS` | 409 | Produit du menu déjà existant sous ce nom (`meta.product_id`) |
@@ -855,6 +859,7 @@ Réponse `201` : `CashSessionOut`. Rejeu de la même clé avec le même corps �
 
 | Code | Cas | `meta` |
 |---|---|---|
+| `404 NOT_FOUND` | Caisse inconnue ou hors service ; la liste des caisses : `GET /cash-registers` (§13) | `cash_register_id` |
 | `409 SESSION_ALREADY_OPEN` | Une session est déjà ouverte sur cette caisse | |
 | `409 BUSINESS_DATE_MISMATCH` | Une session déjà clôturée existe pour cette caisse et cette `business_date` | `business_date`, `existing_session_id` — rejouer avec `confirm_business_date: true` |
 | `409 IDEMPOTENCY_CONFLICT` | Même `Idempotency-Key`, corps différent | `key` |
@@ -1900,7 +1905,78 @@ Tous les articles actifs apparaissent, plus les articles désactivés qui ont bo
 
 ---
 
-## 13. Scénario de test complet (curl + jq)
+## 13. Paramètres et caisses
+
+Préfixe : `/api/v1`. **Accès** : lecture pour tout utilisateur connecté, modification réservée à l'**ADMIN**.
+
+### `GET /settings` — paramètres de l'établissement
+
+```json
+{
+  "restaurant_name": "RESTAURANT CHEZ SYLLA PLUS", "address": "Abidjan, Cocody",
+  "phone": "0700000000", "ncc": "9506466A", "rccm": "",
+  "receipt_footer": "Merci de votre visite", "default_vat_rate": 0.0,
+  "cash_rounding_xof": 5, "cash_denominations_xof": [10000, 5000, 2000, 1000, 500],
+  "payment_methods": ["CASH", "MOBILE_MONEY", "CARD", "BANK_TRANSFER", "CREDIT"],
+  "screen_lock_timeout_seconds": 120,
+  "fne_point_of_sale": "CAISSE-1", "fne_establishment": "RESTAURANT CHEZ SYLLA PLUS",
+  "fne_walk_in_client": { "company_name": "CLIENT DIVERS", "phone": "0700000000", "email": "a@b.ci" }
+}
+```
+
+| Champ | Usage |
+|---|---|
+| `restaurant_name`, `address`, `phone`, `ncc`, `rccm` | En-tête du ticket |
+| `receipt_footer` | Pied du ticket |
+| `default_vat_rate` | TVA des **nouveaux** produits (0 : régime TEE) |
+| `cash_rounding_xof`, `cash_denominations_xof` | Arrondi des espèces, coupures du comptage de clôture |
+| `payment_methods` | Moyens proposés à la caisse, dans l'ordre (`GET /payment-methods` les suit) |
+| `screen_lock_timeout_seconds` | Verrouillage de l'écran du front ; 0 : jamais |
+| `fne_*` | Paramétrage FNE (point de vente et établissement tels que dans l'espace FNE, client de passage des FNE B2C) |
+
+### `PUT /settings` — modifier
+
+**Accès** : ADMIN. **Seuls les champs envoyés changent** ; réponse `200` : tous les paramètres.
+
+```json
+{ "restaurant_name": "RESTAURANT CHEZ SYLLA PLUS", "ncc": "95 06466a" }
+```
+
+- `ncc` : 7 chiffres + 1 lettre (espaces et minuscules acceptés, normalisés) ou vide.
+- `cash_denominations_xof` : positives, distinctes, remises dans l'ordre décroissant.
+- `payment_methods` : au moins un, sans doublon. `OTHER` n'a pas de code FNE : une FNE payée ainsi est refusée.
+- `default_vat_rate` ne change pas les produits existants (pour tous : `python -m caisse.cli set-vat-rate <taux> --all-products`).
+
+Erreurs : `403 INSUFFICIENT_PRIVILEGE`, `422 VALIDATION_ERROR`. Trace dans `audit_logs` : `settings.update`, avec l'avant/après des champs modifiés.
+
+### `GET /cash-registers` — caisses
+
+**Accès** : connecté. Paramètre `is_active` (`true` par défaut, `false` : hors service).
+
+```json
+{ "items": [ { "id": "b3c4…", "name": "Caisse 1", "is_active": true,
+               "open_session": { "id": "…", "business_date": "2026-10-16", "opened_by": "Awa Koné",
+                                 "opened_at": "2026-10-16T07:58:00Z" } } ],
+  "next_cursor": null }
+```
+
+L'`id` sert à ouvrir une session (`POST /cash-sessions`, §6) ; `open_session` vaut `null` si la caisse est fermée.
+
+### `POST /cash-registers` et `PATCH /cash-registers/{id}` — créer, modifier
+
+**Accès** : ADMIN. Corps : `{ "name": "Caisse Bar" }` ; `PATCH` accepte `name` et `is_active`. Mettre `is_active: false` retire la caisse du service (suppression logique). C'est refusé tant qu'une session y est ouverte. Une caisse hors service ne peut plus ouvrir de session.
+
+| Code | Cas |
+|---|---|
+| `404 NOT_FOUND` | Caisse inconnue |
+| `409 CASH_REGISTER_NAME_EXISTS` | Nom déjà pris, sans la casse (`meta.cash_register_id`) |
+| `409 CASH_REGISTER_HAS_OPEN_SESSION` | Désactivation avec une session ouverte (`meta.session_id`) |
+
+Trace dans `audit_logs` : `cash_register.create`, `cash_register.update`.
+
+---
+
+## 14. Scénario de test complet (curl + jq)
 
 À lancer dans un terminal. Remplacer `ADMIN_PIN` par le PIN de l'administrateur créé avec `caisse.cli create-user`.
 
@@ -1954,9 +2030,8 @@ curl -s "$API/products?search=jus" -H "Authorization: Bearer $CT" \
 curl -s $API/tables/board -H "Authorization: Bearer $CT" | jq '{business_date, summary, n: (.tables | length)}'
 
 # 8. Session de caisse (avec le jeton du caissier)
-#    Pas de GET /cash-registers pour l'instant : récupérer l'id via psql (bootstrap crée « Caisse 1 »)
-REGISTER_ID=$(docker exec infra-db psql -U "$POSTGRES_USER" -d caisse -tAc \
-  "select id from cash_registers limit 1")
+#    bootstrap crée « Caisse 1 » : la première caisse en service
+REGISTER_ID=$(curl -s $API/cash-registers -H "Authorization: Bearer $CT" | jq -r '.items[0].id')
 KEY=$(cat /proc/sys/kernel/random/uuid)
 curl -s -X POST $API/cash-sessions -H "Authorization: Bearer $CT" -H "Idempotency-Key: $KEY" \
   -H 'Content-Type: application/json' -d "{\"cash_register_id\":\"$REGISTER_ID\",\"opening_float_xof\":20000}" \
@@ -2061,11 +2136,10 @@ docker exec infra-db sh -c 'psql -U "$POSTGRES_USER" -d caisse -c \
 
 ---
 
-## 14. Pas encore testable
+## 15. Pas encore testable
 
 | Lot | Routes du contrat absentes |
 |---|---|
 | L4 | `POST /orders/{id}/refunds` (remboursement d'une commande soldée, reporté : rare au restaurant) |
 | L6 | `GET /fne/daily-summary/{id}/export` (export du récapitulatif figé à la clôture), worker de renvoi automatique (le renvoi FNE/impression reste manuel pour l'instant) |
 | L5–L6 | `GET /reports/dashboard`, `GET /reports/audit` (les tableaux ventes et stock sont là : §12) |
-| Admin | `/settings`, `/cash-registers` |

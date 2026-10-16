@@ -55,7 +55,8 @@ def open_session(
 ) -> CashSessionOut:
     """Idempotent (`Idempotency-Key` obligatoire).
 
-    Erreurs : `409 SESSION_ALREADY_OPEN`, `409 BUSINESS_DATE_MISMATCH`
+    Erreurs : `404 NOT_FOUND` (caisse inconnue ou hors service : `GET /cash-registers`),
+    `409 SESSION_ALREADY_OPEN`, `409 BUSINESS_DATE_MISMATCH`
     (`meta.existing_session_id` ; rejouer avec `confirm_business_date: true`),
     `409 IDEMPOTENCY_CONFLICT`.
     """

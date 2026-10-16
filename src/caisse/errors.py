@@ -65,6 +65,12 @@ OrderLabelTakenError = _error(
     "OrderLabelTakenError", 409, "Une commande active de la table porte déjà cette étiquette"
 )
 TableLabelExistsError = _error("TableLabelExistsError", 409, "Une table porte déjà ce libellé")
+CashRegisterNameExistsError = _error(
+    "CashRegisterNameExistsError", 409, "Une caisse porte déjà ce nom"
+)
+CashRegisterHasOpenSessionError = _error(
+    "CashRegisterHasOpenSessionError", 409, "Une session est ouverte sur cette caisse"
+)
 TableHasActiveOrdersError = _error(
     "TableHasActiveOrdersError", 409, "La table a des commandes en cours"
 )
