@@ -1,6 +1,17 @@
-# Endpoints testables — état au 06/10/2026
+# Endpoints testables — état au 16/10/2026
 
 Ce document décrit les **routes réellement implémentées** dans `caisse-backend`, telles que le code les expose aujourd'hui. Le contrat cible complet est dans [`03-CONTRAT-API.md`](../../projet_caisse_MYK/03-CONTRAT-API.md). Toute route du contrat absente d'ici renvoie `404 NOT_FOUND`.
+
+## Nouveautés du 16/10/2026 — stock et tableaux de bord
+
+| Sujet | Ce qui change pour le front | Où |
+|---|---|---|
+| **Stock (gestionnaire)** | `/stock/*` : articles de stock, entrées (achats), pertes, inventaires, journal des mouvements ; fiches techniques par produit (`GET/PUT /products/{id}/components`). Rôle RESPONSABLE. Saisies idempotentes (`Idempotency-Key`). | [§11](#11-stock) |
+| **Sortie automatique** | Encaisser une commande (`PAID`) déstocke les articles des fiches techniques ; annuler un paiement qui la fait sortir de `PAID` les remet en stock. Seul changement de la réponse de paiement : `warnings[]` peut contenir `STOCK_NEGATIVE_WARNING` (non bloquant). | [§11](#11-stock) |
+| **`GET /products`** (sens changé) | `track_stock` : le produit a une fiche technique ; `stock_quantity` : **portions encore vendables** (ex. 8 kg de mouton à 0,27 kg → 29), plus une quantité d'article. Mêmes noms de champs. | [§4](#4-catalogue) |
+| **Tableaux de bord (M. Yapi)** | `GET /reports/sales` (chiffre d'affaires, coût matière, marges par jour, produit, catégorie, moyen de paiement, écarts de caisse) et `GET /reports/stock` (stock de début et de fin, entrées, ventes, pertes, écarts d'inventaire, alertes). Rôle ADMIN. | [§12](#12-tableaux-de-bord) |
+| **Menu réel** | `import-catalog` et `import-stock` chargent le menu, les 115 articles et les 35 fiches tirés des Excel. | [§11](#charger-les-articles-et-les-fiches-du-restaurant) |
+| **Nouveau code d'erreur** | `STOCK_ARTICLE_NAME_EXISTS` ; avertissement `STOCK_NEGATIVE_WARNING` (déjà au contrat) dans `warnings[]` des saisies de stock **et du paiement qui solde une commande**. | [§0 Erreurs](#format-des-erreurs-applicationproblemjson) |
 
 ## Nouveautés du 06/10/2026 — impression (ticket, tiroir)
 
@@ -24,7 +35,7 @@ Ce document décrit les **routes réellement implémentées** dans `caisse-backe
 | **Nouveaux codes d'erreur** | `PAYMENT_EXCEEDS_DUE` (déjà au contrat), `PAYMENT_METHOD_DISABLED`, `PAYMENT_NOT_VOIDABLE` ; `ORDER_NOT_EDITABLE` avec `meta.reason = "nothing_due"`. | [§0 Erreurs](#format-des-erreurs-applicationproblemjson) |
 | **Nouvel avertissement** | `FNE_ALREADY_ISSUED` à l'annulation d'un paiement d'une commande qui a déjà une FNE. | [§8](#8-paiements) |
 | **Écran d'avoir FNE** | Non prioritaire (rare au restaurant). | [§9](#9-clients-entreprise-et-fne) |
-| **Pas encore là** | Remboursement d'une commande soldée (`POST /orders/{id}/refunds`) ; ticket de caisse et tiroir (`/printing/*`) : fait depuis le 06/10/2026, voir [§10](#10-impression). | [§12](#12-pas-encore-testable) |
+| **Pas encore là** | Remboursement d'une commande soldée (`POST /orders/{id}/refunds`) ; ticket de caisse et tiroir (`/printing/*`) : fait depuis le 06/10/2026, voir [§10](#10-impression). | [§14](#14-pas-encore-testable) |
 
 ## Nouveautés du 01/10/2026 — FNE et TVA
 
@@ -55,14 +66,17 @@ Ce document décrit les **routes réellement implémentées** dans `caisse-backe
 | 8 | [Paiements](#8-paiements) | `GET /payment-methods`, `POST /orders/{id}/payments`, `DELETE /orders/{id}/payments/{payment_id}` | Encaissement partiel ou mixte, rendu monnaie, annulation d'un paiement |
 | 9 | [Clients entreprise et FNE](#9-clients-entreprise-et-fne) | `GET/POST /customers`, `POST/GET /orders/{id}/fne`, `GET /fne/documents`, `POST …/{id}/retry`, `POST …/{id}/resolve`, `POST …/{id}/refund`, `GET …/{id}/duplicate`, `GET /fne/pending-count`, `GET /fne/daily-summary` | Facture normalisée DGI à la demande, avoirs, suivi |
 | 10 | [Impression](#10-impression) | `GET /printing/status`, `POST /printing/open-drawer`, `GET /printing/jobs`, `POST …/{id}/retry`, `POST /printing/test` | État de l'agent et de la file, actions directes |
-| 11 | [Scénario de test complet](#11-scénario-de-test-complet-curl--jq) | — | Tout le parcours en curl, de la connexion à la clôture |
-| 12 | [Pas encore testable](#12-pas-encore-testable) | — | Routes du contrat pas encore implémentées |
+| 11 | [Stock](#11-stock) | `GET/POST /stock/articles`, `GET/PATCH /stock/articles/{id}`, `POST /stock/receipts`, `POST /stock/losses`, `POST /stock/counts`, `GET /stock/movements`, `GET/PUT /products/{id}/components` | Articles, entrées, pertes, inventaires, fiches techniques (RESPONSABLE) |
+| 12 | [Tableaux de bord](#12-tableaux-de-bord) | `GET /reports/sales`, `GET /reports/stock` | Ventes et stock sur une période (ADMIN) |
+| 13 | [Scénario de test complet](#13-scénario-de-test-complet-curl--jq) | — | Tout le parcours en curl, de la connexion à la clôture |
+| 14 | [Pas encore testable](#14-pas-encore-testable) | — | Routes du contrat pas encore implémentées |
 
 **Par où commencer :**
 
 1. Préparer la base avec `docker compose exec api python -m caisse.cli …` : `bootstrap` (caisse n° 1), `create-user` (un ADMIN), `seed --demo` (menu + 15 tables).
 2. Ouvrir Swagger (http://localhost:8001/docs), se connecter avec `POST /auth/login`, coller l'`access_token` dans **Authorize**.
-3. Suivre le parcours d'une journée : ouvrir la caisse (§6) → prendre des commandes (§7) → encaisser (§8) → clôturer (§6). Le [§11](#11-scénario-de-test-complet-curl--jq) fait la même chose en curl.
+   Pour le menu réel du restaurant avec son stock : `import-catalog` puis `import-stock --stock-initial` (§11).
+3. Suivre le parcours d'une journée : ouvrir la caisse (§6) → prendre des commandes (§7) → encaisser (§8) → clôturer (§6). Le [§13](#13-scénario-de-test-complet-curl--jq) fait la même chose en curl.
 
 ---
 
@@ -95,6 +109,7 @@ Hiérarchie : `CAISSIER < RESPONSABLE < ADMIN`. Un rôle hérite des droits des 
 |---|---|
 | **public** | Aucun jeton |
 | **connecté** | N'importe quel utilisateur actif avec un `access_token` valide |
+| **RESPONSABLE** | Rôle RESPONSABLE ou ADMIN, sinon `403 INSUFFICIENT_PRIVILEGE` |
 | **ADMIN** | Rôle ADMIN obligatoire, sinon `403 INSUFFICIENT_PRIVILEGE` |
 
 ### Durées de vie (valeurs du `.env`)
@@ -160,6 +175,7 @@ Le front doit se fier à **`code`**, qui est stable. `title` et `detail` sont de
 | `FNE_CUSTOMER_REQUIRED`, `FNE_NCC_REQUIRED`, `FNE_NO_PAYMENT`, `FNE_VAT_RATE_UNMAPPED`, `FNE_PAYMENT_METHOD_UNMAPPED`, `FNE_FIELD_REQUIRED` | 422 | Commande impossible à traduire en FNE (client, NCC, paiement, taux de TVA, client de passage non paramétré) |
 | `FNE_REFUND_EXCEEDS` | 422 | Avoir supérieur à la quantité certifiée restante (`meta.available`) |
 | `NO_RECEIPT_TO_REPRINT` | 409 | `POST /orders/{id}/reprint` sur une commande sans ticket déjà imprimé |
+| `STOCK_ARTICLE_NAME_EXISTS` | 409 | Article de stock déjà existant sous ce nom, sans tenir compte de la casse (`meta.article_id`) |
 | `PRINT_JOB_NOT_RETRYABLE` | 409 | `POST /printing/jobs/{id}/retry` sur un travail déjà `DONE` ou en cours |
 | `PRINTER_UNAVAILABLE` | 503 | Action directe (`/printing/open-drawer`, `/printing/test`) : l'agent répond, l'imprimante non. **Jamais** renvoyé par `/orders/{id}/payments` ou `/cash-sessions/{id}/close` : voir [§10](#10-impression). |
 | `PRINT_AGENT_UNAVAILABLE` | 503 | Action directe : l'agent d'impression lui-même est injoignable. Mêmes réserves que ci-dessus. |
@@ -564,7 +580,7 @@ Réponse `200` : triée par `sort_order` puis par nom.
 }
 ```
 
-- `stock_quantity` vaut `null` quand le stock n'est pas suivi (`track_stock: false`). Il est rempli par la même requête, sans appel supplémentaire.
+- `track_stock: true` : le produit a une **fiche technique** (§11), sa vente déstocke. `stock_quantity` donne alors le **nombre de portions encore vendables** avec le stock actuel (minimum sur les articles de la fiche, jamais négatif) ; `null` sans fiche. Rempli par la même requête, sans appel supplémentaire.
 - Les **produits personnalisés** (`is_custom: true`, créés à la volée pendant une commande) **n'apparaissent jamais** dans cette liste.
 - Il n'existe **aucun moyen d'obtenir les produits actifs et inactifs en un seul appel** : `is_active` vaut `true` ou `false`, jamais « tous ».
 
@@ -1167,6 +1183,13 @@ Second paiement qui solde l'addition :
 
 Imprimante hors ligne : la vente reste `201`, mais `"status": "FAILED"` (ou `"QUEUED"`) et `"drawer_opened": false` — à signaler explicitement à la caissière (§10).
 
+Ce paiement qui solde la commande déstocke aussi les articles des fiches techniques (§11). Si un article passe sous zéro, la vente reste `201` et `warnings` le signale (bandeau, jamais bloquant) :
+
+```json
+"warnings": [ { "code": "STOCK_NEGATIVE_WARNING", "detail": "Mouton : stock -0.27",
+                "meta": { "article_id": "…", "quantity": -0.27 } } ]
+```
+
 **Rejeu** de la même clé avec le même corps → `200`, en-tête `Idempotent-Replay: true`, **réponse d'origine à l'identique** (même si la commande a changé depuis), aucun nouveau paiement.
 
 | Code | Cas | `meta` |
@@ -1518,7 +1541,249 @@ Trace dans `audit_logs` : `print_job.print` (ticket, Z, ré-impression), `printi
 
 ---
 
-## 11. Scénario de test complet (curl + jq)
+## 11. Stock
+
+Préfixe : `/api/v1`. **Accès** : RESPONSABLE (le gestionnaire) pour toutes les routes de cette section ; un CAISSIER reçoit `403 INSUFFICIENT_PRIVILEGE`.
+
+### Principe
+
+| Notion | Ce qu'il faut savoir |
+|---|---|
+| **Article de stock** | Ce qu'on achète et qu'on compte (bœuf en kg, poulet à la pièce, Celeste 0,5 L à la bouteille, oignon, gaz…). Distinct du **produit** vendu en caisse. |
+| **Fiche technique** | Ce qu'un produit consomme par portion : « Plat mouton » → 0,27 kg de mouton ; « Eau Celeste 0,5 L » → 1 bouteille. |
+| **`out_mode`** | `RECIPE` : l'article sort **automatiquement** quand un plat qui le contient est encaissé (protéines, boissons). `INVENTORY` : pas de fiche, sa consommation se déduit des inventaires (légumes, condiments, gaz, emballages). |
+| **Sortie automatique** | Quand une commande passe `PAID` (§8), chaque ligne déstocke les articles de sa fiche, dans la même transaction ; la réponse de paiement porte alors `STOCK_NEGATIVE_WARNING` dans `warnings[]` pour chaque article passé sous zéro. Si un paiement annulé la fait repasser `PARTIALLY_PAID`/`OPEN`, le stock revient (`RETURN_IN`). Un nouvel encaissement ressort le stock une seule fois. |
+| **Stock négatif** | Permis : une vente n'est jamais bloquée. Il se voit dans `is_low` et dans le tableau de stock (§12). |
+| **Coût moyen pondéré** (`avg_cost_xof`) | Recalculé à chaque entrée avec le prix payé. Les sorties, pertes et écarts sont valorisés à ce coût. |
+| **Journée** (`business_date`) | Celle de la session de caisse ouverte, sinon aujourd'hui ; une saisie peut la préciser (achat de la veille, par exemple). |
+
+Types de mouvement (`type`) :
+
+| Type | Origine | `quantity` |
+|---|---|---|
+| `OPENING` | Premier comptage d'un article sans mouvement : **stock de départ**, jamais compté comme un écart | + |
+| `PURCHASE_IN` | Entrée (achat), `POST /stock/receipts` | + |
+| `SALE_OUT` | Encaissement d'un plat à fiche | − |
+| `RETURN_IN` | Paiement annulé : remise en stock de la vente | + |
+| `LOSS_OUT` | Perte déclarée, `POST /stock/losses` | − |
+| `INVENTORY_COUNT` | Inventaire, `POST /stock/counts` : l'**écart** entre le compté et le théorique | ± |
+
+### Charger les articles et les fiches du restaurant
+
+Les CSV tirés des classeurs Excel (`src/caisse/seeds/data/`) se chargent en ligne de commande. Le menu d'abord, car les fiches techniques visent les produits par leur nom :
+
+```bash
+docker compose exec api python -m caisse.cli import-catalog                 # 40 plats et boissons
+docker compose exec api python -m caisse.cli import-stock --stock-initial   # 115 articles, 35 fiches
+```
+
+`--stock-initial` saisit un stock de départ (`OPENING`) avec la colonne `stock_excel_13_10` (23 articles : protéines et boissons). **Sans** cette option, les articles partent de 0 : saisir alors un inventaire de départ avec `POST /stock/counts`. Les deux commandes ne recréent jamais ce qui existe déjà.
+
+### Objet `article`
+
+```json
+{
+  "id": "0c4e…", "name": "Bœuf", "category": "PROTEINE", "unit": "kg", "out_mode": "RECIPE",
+  "quantity": 9.4, "avg_cost_xof": 4000.0, "value_xof": 37600,
+  "alert_threshold": 3.0, "is_low": false, "is_active": true,
+  "note": "fournisseur M. Yapi (4 000 F/kg)", "updated_at": "2026-10-16T12:04:10Z"
+}
+```
+
+- `category` : `PROTEINE`, `BOISSON`, `EPICERIE`, `EMBALLAGE`, `ENTRETIEN`, `ENERGIE`.
+- `value_xof` = `quantity` × `avg_cost_xof`, arrondi ; 0 si la quantité est négative.
+- `is_low` : stock négatif, ou au plus égal à `alert_threshold`.
+
+### `GET /stock/articles` — liste
+
+Paramètres facultatifs : `category`, `search` (nom, contient), `is_active` (`true` par défaut, `false` : désactivés), `low_only` (`true` : seulement les articles en alerte). Réponse `200` : `{ "items": [article…], "next_cursor": null }`, par famille puis par nom.
+
+### `POST /stock/articles` — créer
+
+```json
+{ "name": "Bœuf", "category": "PROTEINE", "unit": "kg", "out_mode": "RECIPE",
+  "avg_cost_xof": 4000, "alert_threshold": 3, "note": null }
+```
+
+Réponse `201` : l'article, **à quantité 0**. `avg_cost_xof` (facultatif, 0 par défaut) est le coût de départ, remplacé par le prix de la première entrée si le stock est encore à 0.
+
+| Code | Cas |
+|---|---|
+| `409 STOCK_ARTICLE_NAME_EXISTS` | Nom déjà pris, sans tenir compte de la casse (`meta.article_id`) |
+| `422 VALIDATION_ERROR` | Champ manquant ou invalide |
+
+### `GET /stock/articles/{id}` et `PATCH /stock/articles/{id}` — détail, modifier
+
+`PATCH` ne change que les champs envoyés : `name`, `category`, `unit`, `out_mode`, `alert_threshold` (`null` retire l'alerte), `is_active`, `note`. **La quantité et le coût moyen ne se modifient jamais ici** : passer par une entrée, une perte ou un inventaire. Erreurs : `404 NOT_FOUND`, `409 STOCK_ARTICLE_NAME_EXISTS`.
+
+### Saisies : entrées, pertes, inventaire
+
+Les trois routes suivantes ont le même fonctionnement :
+
+- **`Idempotency-Key` obligatoire.** Un rejeu renvoie la réponse d'origine en `200` avec `Idempotent-Replay: true`, sans second mouvement ; même clé avec un corps différent : `409 IDEMPOTENCY_CONFLICT`.
+- `business_date` facultatif (voir le principe).
+- Plusieurs articles par saisie, **chacun une seule fois** (sinon `422 VALIDATION_ERROR`).
+- Article inconnu : `404 NOT_FOUND`, `meta.article_ids`. Rien n'est enregistré.
+- Réponse `201` :
+
+```json
+{
+  "movements": [
+    { "id": "…", "article_id": "0c4e…", "article_name": "Bœuf", "type": "PURCHASE_IN",
+      "quantity": 10.0, "quantity_after": 10.0, "unit_cost_xof": 4000.0, "value_xof": 40000,
+      "business_date": "2026-10-16", "reference_order_id": null, "supplier": "M. Yapi",
+      "reason": null, "user_id": "…", "created_at": "2026-10-16T12:04:10Z" }
+  ],
+  "articles": [ /* les articles touchés, après l'opération */ ],
+  "warnings": [ { "code": "STOCK_NEGATIVE_WARNING", "detail": "Bœuf : stock -0.5", "meta": { "article_id": "…", "quantity": -0.5 } } ]
+}
+```
+
+`STOCK_NEGATIVE_WARNING` signale un article passé sous zéro ; rien n'est bloqué.
+
+#### `POST /stock/receipts` — entrée (achat)
+
+```json
+{
+  "supplier": "M. Yapi",
+  "lines": [
+    { "article_id": "…bœuf", "quantity": 10, "total_cost_xof": 40000 },
+    { "article_id": "…bissap", "quantity": 24, "unit_cost_xof": 250 }
+  ]
+}
+```
+
+Chaque ligne donne **soit** le montant payé (`total_cost_xof`), **soit** le prix d'une unité (`unit_cost_xof`), jamais les deux ni aucun (`422`). Le coût moyen est recalculé : 10 kg à 4 000 puis 5 kg à 4 600 donnent 15 kg à 4 200.
+
+#### `POST /stock/losses` — perte
+
+```json
+{ "reason": "avarié", "lines": [ { "article_id": "…", "quantity": 1.5 } ] }
+```
+
+`reason` obligatoire (avarié, cassé, repas du personnel…). Valorisée au coût moyen.
+
+#### `POST /stock/counts` — inventaire
+
+```json
+{ "reason": "pesée du lundi", "lines": [ { "article_id": "…", "counted_quantity": 8.5 } ] }
+```
+
+Le stock de chaque article **devient** la quantité comptée, et le mouvement porte l'écart. Exemple : stock théorique de 9 kg après les ventes, 8,5 kg comptés → `INVENTORY_COUNT` de −0,5 kg (2 000 F manquants). Pour un article `INVENTORY` (oignon, gaz), cet écart est sa consommation depuis le dernier comptage. Un écart nul est enregistré aussi : il date le dernier inventaire. Le **premier** comptage d'un article sans aucun mouvement est un `OPENING` (stock de départ).
+
+### `GET /stock/movements` — journal
+
+Paramètres facultatifs : `article_id`, `type`, `date_from`, `date_to` (journées incluses), `limit` (100 par défaut, 500 au plus). Réponse `200` : `{ "items": [mouvement…] }`, du plus récent au plus ancien. `reference_order_id` renvoie à la commande pour une vente ou une remise en stock.
+
+### `GET /products/{id}/components` — fiche technique d'un plat
+
+```json
+{
+  "product_id": "…", "product_name": "Plat bœuf", "price_xof": 3000,
+  "components": [
+    { "article_id": "…", "article_name": "Bœuf", "unit": "kg", "quantity": 0.2,
+      "unit_cost_xof": 4000.0, "cost_xof": 800.0 }
+  ],
+  "cost_xof": 800.0, "margin_xof": 2200.0
+}
+```
+
+Coût matière au coût moyen **actuel**. Erreurs : `404 NOT_FOUND`.
+
+### `PUT /products/{id}/components` — remplacer la fiche
+
+```json
+{ "components": [ { "article_id": "…", "quantity": 0.2 } ] }
+```
+
+La fiche envoyée **remplace** l'ancienne ; `components: []` : le plat ne déstocke plus. Elle vaut pour les encaissements suivants ; les ventes passées gardent leurs mouvements. Réponse `200` : la fiche, au format du `GET`. Erreurs : `404 NOT_FOUND` (produit ou article inconnu), `422 VALIDATION_ERROR` (article présent deux fois, quantité ≤ 0).
+
+Côté caisse, `GET /products` (§4) indique maintenant `track_stock: true` pour un produit qui a une fiche, et `stock_quantity` donne le **nombre de portions** encore vendables.
+
+Trace dans `audit_logs` : `stock.article_create`, `stock.article_update`, `stock.receive`, `stock.loss`, `stock.count`, `stock.components_set`, `stock.import` (ligne de commande).
+
+---
+
+## 12. Tableaux de bord
+
+Préfixe : `/api/v1/reports`. **Accès** : ADMIN (M. Yapi). Lecture seule.
+
+Paramètres des deux routes : `date_from` et `date_to` (journées comptables incluses). Sans `date_to` : la journée en cours (session ouverte, sinon aujourd'hui) ; sans `date_from` : égale à `date_to`. Période de 366 jours au plus.
+
+| Code | Cas |
+|---|---|
+| `403 INSUFFICIENT_PRIVILEGE` | Pas ADMIN |
+| `422 VALIDATION_ERROR` | `date_from` après `date_to`, ou période trop longue |
+
+### `GET /reports/sales` — tableau des ventes
+
+Commandes **soldées** (`PAID`) dont la journée est dans la période.
+
+```json
+{
+  "date_from": "2026-10-12", "date_to": "2026-10-16",
+  "totals": {
+    "revenue_xof": 845000, "orders_count": 214, "average_ticket_xof": 3949,
+    "recipe_cost_xof": 352000, "recipe_margin_xof": 493000, "uncosted_revenue_xof": 21000,
+    "inventory_consumption_xof": 118000, "stock_variance_xof": 6000, "gross_margin_xof": 369000
+  },
+  "by_day": [ { "business_date": "2026-10-12", "orders_count": 41, "revenue_xof": 172000,
+                "recipe_cost_xof": 70100, "recipe_margin_xof": 101900 } ],
+  "by_product": [ { "product_id": "…", "name": "Plat poulet", "category": "Viandes",
+                    "quantity": 58, "revenue_xof": 174000, "has_recipe": true,
+                    "recipe_cost_xof": 43500, "recipe_margin_xof": 130500 } ],
+  "by_category": [ { "category": "Viandes", "quantity": 120, "revenue_xof": 381000,
+                     "recipe_cost_xof": 150000, "recipe_margin_xof": 231000 } ],
+  "by_payment_method": [ { "method": "CASH", "count": 180, "amount_xof": 700000 } ],
+  "cash_sessions": [ { "id": "…", "business_date": "2026-10-12", "status": "CLOSED",
+                       "z_number": 12, "expected_cash_xof": 160000,
+                       "counted_cash_xof": 159500, "variance_xof": -500 } ]
+}
+```
+
+| Champ | Calcul |
+|---|---|
+| `recipe_cost_xof` | Coût matière des fiches techniques, au coût moyen du **moment de la vente** |
+| `uncosted_revenue_xof` | Chiffre d'affaires des produits **sans fiche** (accompagnements, thé…) : leur coût n'est pas dans `recipe_cost_xof` |
+| `inventory_consumption_xof` | Ce que les inventaires et les pertes de la période font sortir pour les articles `INVENTORY` (légumes, gaz…) |
+| `stock_variance_xof` | Manquants (inventaire) et pertes sur les articles `RECIPE` : ce qui a disparu sans être vendu. Négatif si l'inventaire trouve plus que prévu |
+| `gross_margin_xof` | `revenue − recipe_cost − inventory_consumption − stock_variance`. Juste seulement avec des inventaires réguliers |
+
+`by_product` et `by_category` sont triés par chiffre d'affaires décroissant ; les libellés sont ceux du moment de la vente.
+
+### `GET /reports/stock` — tableau du stock
+
+```json
+{
+  "date_from": "2026-10-12", "date_to": "2026-10-16",
+  "totals": { "stock_value_xof": 1250000, "purchases_xof": 410000, "sales_cost_xof": 352000,
+              "inventory_consumption_xof": 118000, "stock_variance_xof": 6000, "low_count": 3 },
+  "articles": [
+    { "article_id": "…", "name": "Bœuf", "category": "PROTEINE", "unit": "kg",
+      "out_mode": "RECIPE", "opening_quantity": 0.0, "purchased_quantity": 10.0,
+      "purchases_xof": 40000, "sold_quantity": 1.0, "loss_quantity": 0.0,
+      "count_adjustment_quantity": -0.25, "closing_quantity": 8.75,
+      "consumption_quantity": 1.25, "consumption_xof": 5000,
+      "quantity": 8.75, "avg_cost_xof": 4000.0, "value_xof": 35000,
+      "alert_threshold": 3.0, "is_low": false, "last_count_date": "2026-10-16" }
+  ]
+}
+```
+
+| Champ | Lecture |
+|---|---|
+| `opening_quantity` / `closing_quantity` | Stock au début et à la fin de la période (un stock de départ `OPENING` saisi pendant la période compte dans le début) |
+| `sold_quantity` | Sorties par les ventes, nettes des remises en stock |
+| `count_adjustment_quantity` | Écart d'inventaire : pour un article `RECIPE`, **stock compté − stock théorique** (le « rapport bœuf » de l'Excel) ; pour un article `INVENTORY`, sa consommation (signe −) |
+| `consumption_quantity` | `opening + purchased − closing` : tout ce qui est sorti, quelle qu'en soit la raison |
+| `quantity`, `avg_cost_xof`, `value_xof`, `is_low` | État **actuel**, quelle que soit la période |
+| `last_count_date` | Dernier inventaire jusqu'à `date_to` (`null` : jamais compté) |
+
+Tous les articles actifs apparaissent, plus les articles désactivés qui ont bougé dans la période ; par famille puis par nom.
+
+---
+
+## 13. Scénario de test complet (curl + jq)
 
 À lancer dans un terminal. Remplacer `ADMIN_PIN` par le PIN de l'administrateur créé avec `caisse.cli create-user`.
 
@@ -1679,13 +1944,12 @@ docker exec infra-db sh -c 'psql -U "$POSTGRES_USER" -d caisse -c \
 
 ---
 
-## 12. Pas encore testable
+## 14. Pas encore testable
 
 | Lot | Routes du contrat absentes |
 |---|---|
 | L2 | `POST/PATCH/DELETE /categories`, `POST/PATCH /products`, `PATCH /products/{id}/price`, `POST/PATCH /tables` |
 | L4 | `POST /orders/{id}/refunds` (remboursement d'une commande soldée, reporté : rare au restaurant) |
-| L5 | `/stock/*` |
 | L6 | `GET /fne/daily-summary/{id}/export` (export du récapitulatif figé à la clôture), worker de renvoi automatique (le renvoi FNE/impression reste manuel pour l'instant) |
-| L5–L6 | `/reports/*` |
+| L5–L6 | `GET /reports/dashboard`, `GET /reports/audit` (les tableaux ventes et stock sont là : §12) |
 | Admin | `/settings`, `/cash-registers` |

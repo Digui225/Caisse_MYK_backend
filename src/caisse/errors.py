@@ -88,6 +88,9 @@ NoReceiptToReprintError = _error(
 PrintJobNotRetryableError = _error(
     "PrintJobNotRetryableError", 409, "Travail d'impression dans un état qui interdit le renvoi"
 )
+StockArticleNameExistsError = _error(
+    "StockArticleNameExistsError", 409, "Un article de stock porte déjà ce nom"
+)
 
 
 class PrinterUnavailableError(InfrastructureError):

@@ -46,6 +46,9 @@ def register_payment(
     `amount_xof` ne dépasse jamais le reste dû ; en espèces, `tendered_xof` donne le rendu
     (`payment.change_xof`).
 
+    Le paiement qui solde la commande déstocke les articles des fiches techniques ; warning
+    `STOCK_NEGATIVE_WARNING` (`meta.article_id`) si un article passe sous zéro (non bloquant).
+
     Erreurs : `404 NOT_FOUND`, `409 ORDER_NOT_EDITABLE` (soldée, annulée, ou
     `meta.reason = "nothing_due"`), `422 PAYMENT_EXCEEDS_DUE` (`meta.due_xof`),
     `422 PAYMENT_METHOD_DISABLED`, `409 NO_OPEN_SESSION`, `409 IDEMPOTENCY_CONFLICT`,

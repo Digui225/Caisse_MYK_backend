@@ -1,11 +1,12 @@
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import Row, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from caisse.domain import stock_rules
 from caisse.models.catalog import Category, Product
-from caisse.models.stock import StockItem
+from caisse.repositories import stock as stock_repo
 
 
 def list_categories(db: Session, *, include_inactive: bool = False) -> list[Category]:
@@ -17,12 +18,11 @@ def list_categories(db: Session, *, include_inactive: bool = False) -> list[Cate
 
 def list_products(
     db: Session, *, category_id: uuid.UUID | None, search: str | None, is_active: bool | None
-) -> list[Row[tuple[Product, Decimal | None]]]:
-    """Produits + quantité en stock en une requête. Les produits personnalisés sont exclus
-    du menu (00-ARCHITECTURE §7.2)."""
+) -> list[tuple[Product, Decimal | None]]:
+    """Produits + portions encore vendables d'après leur fiche technique (`None` : pas de
+    fiche). Les produits personnalisés sont exclus du menu (00-ARCHITECTURE §7.2)."""
     stmt = (
-        select(Product, StockItem.quantity)
-        .outerjoin(StockItem, StockItem.product_id == Product.id)
+        select(Product)
         .where(Product.is_custom.is_(False))
         .order_by(Product.sort_order, Product.name)
     )
@@ -32,4 +32,14 @@ def list_products(
         stmt = stmt.where(Product.name.ilike(f"%{search}%"))
     if is_active is not None:
         stmt = stmt.where(Product.is_active.is_(is_active))
-    return list(db.execute(stmt).all())  # type: ignore[arg-type]  # outer join : quantité nullable
+    products = list(db.scalars(stmt))
+    recipes = stock_repo.components_by_product(db, [p.id for p in products])
+    return [
+        (
+            p,
+            stock_rules.portions_available(
+                (per_portion, article.quantity) for per_portion, article in recipes.get(p.id, [])
+            ),
+        )
+        for p in products
+    ]

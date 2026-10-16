@@ -30,18 +30,20 @@ def list_products(
         bool | None, Query(description="true : produits vendables ; false : produits désactivés")
     ] = True,
 ) -> Page[ProductOut]:
-    """Produits du menu avec leur stock, dans l'ordre d'affichage. Les produits créés à la
-    volée pendant une commande n'y figurent pas."""
+    """Produits du menu dans l'ordre d'affichage. `track_stock` : le produit a une fiche
+    technique ; `stock_quantity` : portions encore vendables avec le stock actuel (minimum sur
+    les articles de la fiche). Les produits créés à la volée n'y figurent pas."""
     rows = catalog_repo.list_products(
         db, category_id=category_id, search=search, is_active=is_active
     )
     items = [
         ProductOut.model_validate(product).model_copy(
             update={
-                "stock_quantity": float(qty) if product.track_stock and qty is not None else None,
+                "track_stock": portions is not None,
+                "stock_quantity": float(portions) if portions is not None else None,
             }
         )
-        for product, qty in rows
+        for product, portions in rows
     ]
     return Page(items=items)
 

@@ -31,7 +31,6 @@ def create_custom_product(
         short_name=name[:20].rstrip(),
         price_xof=price_xof,
         vat_rate=settings_repo.default_vat_rate(db) if vat_rate is None else vat_rate,
-        track_stock=False,
         is_custom=True,
         is_active=True,
     )

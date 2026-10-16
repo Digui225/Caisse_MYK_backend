@@ -43,7 +43,13 @@ from caisse.schemas.common import ApiWarning
 from caisse.schemas.orders import OrderOut, PaymentResult, ReceiptOut
 from caisse.schemas.payments import PaymentCreate, PaymentMethodOut, PaymentOut
 from caisse.security import utcnow
-from caisse.services import audit_service, auth_service, order_service, printing_service
+from caisse.services import (
+    audit_service,
+    auth_service,
+    order_service,
+    printing_service,
+    stock_service,
+)
 from caisse.services.audit_service import RequestContext
 
 VOID_ACTION = "payment.void"
@@ -85,9 +91,13 @@ def list_methods(db: Session) -> list[PaymentMethodOut]:
     ]
 
 
-def _apply_paid(db: Session, order: Order, user: User) -> None:
-    """Payé et reste dû recalculés depuis les paiements capturés, jamais incrémentés."""
+def _apply_paid(db: Session, order: Order, user: User) -> list[ApiWarning]:
+    """Payé et reste dû recalculés depuis les paiements capturés, jamais incrémentés.
+    Le stock suit le statut : sortie quand la commande devient soldée, remise en stock quand
+    un paiement annulé la fait sortir de `PAID` (même transaction). Retourne les
+    avertissements de stock négatif."""
     db.flush()
+    was_paid = order.status == OrderStatus.PAID
     order.paid_xof = payments_repo.captured_total(db, order.id)
     order.due_xof = order.total_ttc_xof - order.paid_xof
     if order.due_xof == 0:
@@ -98,6 +108,11 @@ def _apply_paid(db: Session, order: Order, user: User) -> None:
         order.status = OrderStatus.PARTIALLY_PAID if order.paid_xof > 0 else OrderStatus.OPEN
         order.paid_at = None
         order.closed_by_user_id = None
+    if order.status == OrderStatus.PAID and not was_paid:
+        return stock_service.apply_sale(db, order, user.id)
+    if was_paid and order.status != OrderStatus.PAID:
+        stock_service.reverse_sale(db, order, user.id)
+    return []
 
 
 def _print_receipt(
@@ -226,7 +241,7 @@ def register_payment(
             return replay, True
         raise IdempotencyConflictError(meta={"key": idempotency_key}) from None
 
-    _apply_paid(db, order, user)
+    stock_warnings = _apply_paid(db, order, user)
     audit_service.log(
         db,
         "payment.create",
@@ -248,7 +263,10 @@ def register_payment(
         else None
     )
     result = PaymentResult(
-        payment=PaymentOut.model_validate(payment), order=order_out, receipt=receipt
+        payment=PaymentOut.model_validate(payment),
+        order=order_out,
+        receipt=receipt,
+        warnings=stock_warnings,
     )
     idempotency.save(
         db,

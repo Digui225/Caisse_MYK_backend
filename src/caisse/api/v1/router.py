@@ -8,7 +8,9 @@ from caisse.api.v1 import (
     orders,
     payments,
     printing,
+    reports,
     sessions,
+    stock,
     tables,
     users,
 )
@@ -22,6 +24,8 @@ for module in (
     sessions,
     orders,
     payments,
+    stock,
+    reports,
     customers,
     fne,
     printing,

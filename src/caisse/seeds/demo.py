@@ -5,10 +5,17 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from caisse.domain.enums import CategoryKind
+from caisse.domain.enums import (
+    CategoryKind,
+    StockArticleCategory,
+    StockMovementType,
+    StockOutMode,
+)
 from caisse.models.catalog import Category, Product
-from caisse.models.stock import StockItem
+from caisse.models.stock import ProductComponent, StockArticle
 from caisse.repositories import settings as settings_repo
+from caisse.security import utcnow
+from caisse.services import stock_service
 
 # (catégorie, kind, groupe fiscal, couleur, [(nom, libellé ticket, prix, suivi stock)])
 DEMO_MENU: list[tuple[str, CategoryKind, str, str, list[tuple[str, str, int, bool]]]] = [
@@ -96,18 +103,34 @@ def load_demo_menu(db: Session) -> int:
                 name=name,
                 short_name=short,
                 price_xof=price,
-                track_stock=track,
                 sort_order=prod_order,
                 vat_rate=vat_rate,
                 color=color,
             )
             db.add(product)
             db.flush()
-            if track:
-                db.add(
-                    StockItem(
-                        product_id=product.id, quantity=Decimal(48), alert_threshold=Decimal(12)
-                    )
+            if track:  # boisson suivie : un article du même nom, fiche 1 pour 1
+                article = StockArticle(
+                    name=name,
+                    category=StockArticleCategory.BOISSON,
+                    unit="bouteille",
+                    out_mode=StockOutMode.RECIPE,
+                    quantity=Decimal(0),
+                    avg_cost_xof=Decimal(price // 2),
+                    alert_threshold=Decimal(12),
                 )
+                db.add(article)
+                db.flush()
+                stock_service.move(
+                    db,
+                    article,
+                    StockMovementType.OPENING,
+                    Decimal(48),
+                    unit_cost=article.avg_cost_xof,
+                    business_date=utcnow().date(),
+                    user_id=None,
+                    reason="Stock de démonstration",
+                )
+                db.add(ProductComponent(product_id=product.id, article_id=article.id, quantity=1))
             created += 1
     return created

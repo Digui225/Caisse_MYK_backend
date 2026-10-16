@@ -28,9 +28,12 @@ class ProductOut(Schema):
     category_id: uuid.UUID = Field(description="Catégorie du produit")
     price_xof: int = Field(description="Prix TTC, en francs CFA entiers", examples=[1000])
     vat_rate: float = Field(description="Taux de TVA, en pourcentage", examples=[0.0])
-    track_stock: bool = Field(description="Le stock de ce produit est suivi")
+    track_stock: bool = Field(
+        default=False, description="Le produit a une fiche technique : sa vente déstocke"
+    )
     stock_quantity: float | None = Field(
-        default=None, description="Quantité en stock ; null si le stock n'est pas suivi"
+        default=None,
+        description="Portions encore vendables avec le stock actuel ; null sans fiche technique",
     )
     is_active: bool = Field(description="Vendable")
     is_custom: bool = Field(description="Produit créé à la volée pendant une commande")

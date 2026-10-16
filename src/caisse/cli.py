@@ -5,7 +5,8 @@ python -m caisse.cli create-user [--noinput]
 python -m caisse.cli reset-pin --name "Awa"
 python -m caisse.cli seed --demo
 python -m caisse.cli create-tables --count 15 --zone Salle
-python -m caisse.cli import-catalog /data/menu.csv
+python -m caisse.cli import-catalog [/data/menu.csv]     # défaut : seeds/data/menu.csv
+python -m caisse.cli import-stock [--stock-initial]       # articles + fiches techniques
 python -m caisse.cli set-vat-rate 0 --all-products
 python -m caisse.cli fne-probe --point-of-sale "..." --client-phone ... --client-email ... --yes
 python -m caisse.cli fne-probe ... --template B2B --client-ncc 9502363N --client-name "SOCIETE X"
@@ -30,10 +31,10 @@ from caisse.domain.fne import FneTemplate
 from caisse.errors import DomainError
 from caisse.models.catalog import Category, Product
 from caisse.models.settings import AppSetting
-from caisse.models.stock import StockItem
 from caisse.models.table import RestaurantTable
 from caisse.repositories import settings as settings_repo
 from caisse.repositories import users as users_repo
+from caisse.seeds import stock_import
 from caisse.seeds.defaults import ensure_defaults
 from caisse.services import audit_service, user_service
 from caisse.services.audit_service import RequestContext
@@ -120,46 +121,82 @@ def cmd_create_tables(db: Session, args: argparse.Namespace) -> None:
 
 
 def cmd_import_catalog(db: Session, args: argparse.Namespace) -> None:
-    """CSV : categorie,nom,prix_xof,suivi_stock,groupe_fiscal (en-tête obligatoire)."""
+    """CSV : categorie,nom,prix_xof,suivi_stock,groupe_fiscal[,nom_ticket] (en-tête
+    obligatoire). L'ordre du fichier donne l'ordre d'affichage ; `suivi_stock` marque une
+    catégorie de boissons (le déstockage vient des fiches techniques : `import-stock`)."""
     path = Path(args.csv)
     created = 0
     vat_rate = settings_repo.default_vat_rate(db)
+    category_order: dict[str, int] = {}
     with path.open(newline="", encoding="utf-8-sig") as fh:
         for line_no, row in enumerate(csv.DictReader(fh), start=2):
             try:
                 cat_name = row["categorie"].strip()
                 name = row["nom"].strip()
                 price = int(row["prix_xof"])
-                track = row["suivi_stock"].strip().lower() in {"1", "oui", "true", "o", "x"}
+                drink = row["suivi_stock"].strip().lower() in {"1", "oui", "true", "o", "x"}
                 group = (row.get("groupe_fiscal") or "AUTRES").strip().upper()
+                short_name = (row.get("nom_ticket") or "").strip() or name
             except (KeyError, ValueError) as exc:
                 sys.exit(f"Ligne {line_no} invalide : {exc}")
+            if len(short_name) > 20:
+                sys.exit(f"Ligne {line_no} invalide : nom_ticket de plus de 20 caractères")
+            category_order.setdefault(cat_name, len(category_order))
             category = db.scalar(select(Category).where(Category.name == cat_name))
             if category is None:
                 category = Category(
                     name=cat_name,
                     fiscal_group=group,
-                    kind=CategoryKind.DRINK if track else CategoryKind.FOOD,
+                    kind=CategoryKind.DRINK if drink else CategoryKind.FOOD,
+                    sort_order=category_order[cat_name],
                 )
                 db.add(category)
                 db.flush()
             if db.scalar(select(Product).where(Product.name == name)) is not None:
                 continue
-            product = Product(
-                category_id=category.id,
-                name=name,
-                short_name=name[:20],
-                price_xof=price,
-                track_stock=track,
-                vat_rate=vat_rate,
+            db.add(
+                Product(
+                    category_id=category.id,
+                    name=name,
+                    short_name=short_name,
+                    price_xof=price,
+                    vat_rate=vat_rate,
+                    sort_order=line_no,
+                )
             )
-            db.add(product)
-            db.flush()
-            if track:
-                db.add(StockItem(product_id=product.id))
             created += 1
     db.commit()
     print(f"{created} produit(s) importé(s).")
+
+
+def cmd_import_stock(db: Session, args: argparse.Namespace) -> None:
+    """Articles puis fiches techniques ; les produits du menu doivent déjà exister."""
+    try:
+        articles = stock_import.import_articles(
+            db, Path(args.articles), initial_stock=args.stock_initial
+        )
+        products = stock_import.import_components(db, Path(args.fiches))
+    except stock_import.StockImportError as exc:
+        db.rollback()
+        sys.exit(f"Erreur : {exc}")
+    audit_service.log(
+        db,
+        "stock.import",
+        ctx=CLI_CTX,
+        entity="stock_article",
+        after={
+            "articles_created": articles.created,
+            "articles_skipped": articles.skipped,
+            "initial_counts": articles.initial_counts,
+            "products_with_recipe": products,
+        },
+    )
+    db.commit()
+    print(
+        f"Articles : {articles.created} créé(s), {articles.skipped} déjà présent(s) ; "
+        f"stock de départ : {articles.initial_counts} article(s) ; "
+        f"fiches techniques : {products} produit(s)."
+    )
 
 
 def cmd_set_vat_rate(db: Session, args: argparse.Namespace) -> None:
@@ -298,7 +335,15 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--count", type=int, required=True)
     p.add_argument("--zone", default="Salle")
     p = sub.add_parser("import-catalog", help="Importer le menu depuis un CSV")
-    p.add_argument("csv")
+    p.add_argument("csv", nargs="?", default=str(stock_import.DATA_DIR / "menu.csv"))
+    p = sub.add_parser("import-stock", help="Importer les articles et les fiches techniques")
+    p.add_argument("--articles", default=str(stock_import.ARTICLES_CSV))
+    p.add_argument("--fiches", default=str(stock_import.COMPONENTS_CSV))
+    p.add_argument(
+        "--stock-initial",
+        action="store_true",
+        help="inventaire de départ avec la colonne stock_excel_13_10 (articles créés)",
+    )
     p = sub.add_parser("set-vat-rate", help="Taux de TVA par défaut (et des produits)")
     p.add_argument("rate", help="en %, ex. 0 (régime TEE) ou 18")
     p.add_argument("--all-products", action="store_true", help="appliquer à tous les produits")
@@ -331,6 +376,7 @@ def main(argv: list[str] | None = None) -> None:
         "seed": cmd_seed,
         "create-tables": cmd_create_tables,
         "import-catalog": cmd_import_catalog,
+        "import-stock": cmd_import_stock,
         "set-vat-rate": cmd_set_vat_rate,
     }[args.command]
     with get_sessionmaker()() as db:

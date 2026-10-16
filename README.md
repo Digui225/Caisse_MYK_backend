@@ -13,6 +13,10 @@ docker compose exec api alembic upgrade head
 docker compose exec api python -m caisse.cli bootstrap        # caisse n° 1 + paramètres
 docker compose exec api python -m caisse.cli create-user      # premier ADMIN (PIN 6 chiffres)
 docker compose exec api python -m caisse.cli seed --demo      # dév. uniquement : menu + 15 tables
+# ou le menu réel et son stock (CSV tirés des Excel, src/caisse/seeds/data/) :
+docker compose exec api python -m caisse.cli import-catalog
+docker compose exec api python -m caisse.cli import-stock --stock-initial
+docker compose exec api python -m caisse.cli create-tables --count 15
 curl -s localhost:8001/health/ready
 ```
 
@@ -68,4 +72,5 @@ print-agent/       service systemd hors Docker (imprimante USB + tiroir)
 | L3 | `GET /tables/board` (requête agrégée), commandes (table / à emporter), lignes (ajout, modification, retrait avec motif), annulation sous override, article libre, `POST /orders/{id}/reprint` | — |
 | L4 | Paiements (idempotents, partiels/mixtes, rendu monnaie, annulation tracée sous override), `GET /payment-methods` ; agent d'impression (USB + tiroir, mode dummy) ; ticket imprimé et tiroir ouvert à l'encaissement et à la clôture (Z), `/printing/*` (état, file, rejeu, ouverture manuelle, test) | Remboursement d'une commande soldée (reporté) |
 | L6 | FNE à la demande (B2C/B2B, idempotente, résultats incertains, renvoi manuel, avoirs), clients entreprise, récapitulatif fiscal | Worker de renvoi automatique, export du récapitulatif figé au Z |
-| Reste | — | Stock, CRUD catalogue, rapports, worker (renvoi auto FNE + impression), backup, admin (`/settings`, `/cash-registers`) |
+| L5 (stock) | Articles de stock distincts des produits, fiches techniques, entrées (CMP), pertes, inventaires (stock de départ `OPENING`), sortie automatique à l'encaissement et remise en stock à l'annulation d'un paiement, tableaux ventes et stock (ADMIN), import du menu et du stock tirés des Excel (`import-catalog`, `import-stock`) | Écrans front, rapport `dashboard`, alertes de stock dans le Z |
+| Reste | — | CRUD catalogue, rapports `dashboard`/`audit`, worker (renvoi auto FNE + impression), backup, admin (`/settings`, `/cash-registers`) |
