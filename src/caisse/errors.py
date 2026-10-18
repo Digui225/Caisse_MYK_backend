@@ -26,6 +26,7 @@ class DomainError(Exception):
         super().__init__(detail or self.title)
         self.detail = detail or self.title
         self.meta = meta or {}
+        self.headers: dict[str, str] = {}
 
 
 class InfrastructureError(Exception):
@@ -114,6 +115,21 @@ ProductNameExistsError = _error(
 ProductSkuExistsError = _error("ProductSkuExistsError", 409, "Ce code article est déjà utilisé")
 
 
+class RateLimitExceededError(DomainError):
+    """Trop de requêtes depuis une même adresse IP ; `Retry-After` donne l'attente."""
+
+    status = 429
+    code = "RATE_LIMIT_EXCEEDED"
+    title = "Trop de requêtes, réessayer plus tard"
+
+    def __init__(self, retry_after: int, *, limit: int, window_seconds: int) -> None:
+        super().__init__(
+            f"Réessayer dans {retry_after} s.",
+            meta={"retry_after": retry_after, "limit": limit, "window_seconds": window_seconds},
+        )
+        self.headers = {"Retry-After": str(retry_after)}
+
+
 class PrinterUnavailableError(InfrastructureError):
     """L'agent d'impression répond, mais l'imprimante elle-même ne peut pas imprimer
     (papier, panne driver) — réservé aux actions directes (`/printing/*`)."""
@@ -147,6 +163,7 @@ def _problem(
     title: str,
     detail: str,
     meta: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     body = {
         "type": ERROR_TYPE_BASE + code.lower().replace("_", "-"),
@@ -157,7 +174,7 @@ def _problem(
         "meta": meta or {},
         "request_id": getattr(request.state, "request_id", None),
     }
-    return JSONResponse(body, status_code=status, media_type=PROBLEM_JSON)
+    return JSONResponse(body, status_code=status, media_type=PROBLEM_JSON, headers=headers)
 
 
 def install_error_handlers(app: FastAPI) -> None:
@@ -170,6 +187,7 @@ def install_error_handlers(app: FastAPI) -> None:
             title=exc.title,
             detail=exc.detail,
             meta=exc.meta,
+            headers=exc.headers or None,
         )
 
     @app.exception_handler(RequestValidationError)

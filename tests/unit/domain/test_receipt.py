@@ -71,3 +71,27 @@ def test_render_z_report_contains_totals_and_variance() -> None:
     assert "50 000 XOF" in rendered
     assert "-500 XOF" in rendered
     assert "1 / 2" in rendered
+
+
+def test_mobile_money_label_and_legal_mentions() -> None:
+    assert receipt.payment_label("MOBILE_MONEY", "WAVE") == "Wave"
+    assert receipt.payment_label("MOBILE_MONEY", "orange") == "Orange Money"
+    assert receipt.payment_label("MOBILE_MONEY", None) == "Mobile Money"
+    assert receipt.payment_label("CASH") == "Espèces"
+    text = receipt.render_receipt(
+        order_number="2026-10-16-0001",
+        table_label=None,
+        counter_number=1,
+        items=[receipt.ReceiptLine(name="Alloco", quantity=1, line_total_xof=1000)],
+        payments=[receipt.ReceiptPayment(method="MOBILE_MONEY", amount_xof=1000, provider="MTN")],
+        total_ttc_xof=1000,
+        header_name="RESTAURANT CHEZ SYLLA PLUS",
+        header_address=None,
+        header_phone=None,
+        footer="",
+        width=48,
+        header_ncc="9506466A",
+    )
+    lines = text.splitlines()
+    assert lines[1].strip() == "NCC 9506466A"
+    assert any(line.startswith("MTN MoMo") and line.endswith("1 000 XOF") for line in lines)

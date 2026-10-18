@@ -16,6 +16,19 @@ _PAYMENT_LABELS = {
     "CREDIT": "Paiement différé",
     "OTHER": "Autre",
 }
+# Mobile Money : le client reconnaît son opérateur, pas « Mobile Money »
+_PROVIDER_LABELS = {
+    "WAVE": "Wave",
+    "ORANGE": "Orange Money",
+    "MTN": "MTN MoMo",
+    "MOOV": "Moov Money",
+}
+
+
+def payment_label(method: str, provider: str | None = None) -> str:
+    if method == "MOBILE_MONEY" and provider:
+        return _PROVIDER_LABELS.get(provider.upper(), f"Mobile Money {provider}")
+    return _PAYMENT_LABELS.get(method, method)
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +44,7 @@ class ReceiptPayment:
     method: str
     amount_xof: int
     change_xof: int = 0
+    provider: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,12 +79,21 @@ def render_receipt(
     header_phone: str | None,
     footer: str,
     width: int = 48,
+    header_ncc: str | None = None,
+    header_rccm: str | None = None,
 ) -> str:
     lines: list[str] = [_center(header_name, width)]
     if header_address:
         lines.append(_center(header_address, width))
     if header_phone:
         lines.append(_center(header_phone, width))
+    legal = " - ".join(
+        part
+        for part in (header_ncc and f"NCC {header_ncc}", header_rccm and f"RCCM {header_rccm}")
+        if part
+    )
+    if legal:
+        lines.append(_center(legal, width))
     lines.append(_rule(width))
     lines.append(f"N° {order_number}")
     if table_label:
@@ -86,7 +109,7 @@ def render_receipt(
     lines.append(_rule(width))
     lines.append(_two_cols("TOTAL", f"{format_xof(total_ttc_xof)} XOF", width))
     for payment in payments:
-        label = _PAYMENT_LABELS.get(payment.method, payment.method)
+        label = payment_label(payment.method, payment.provider)
         lines.append(_two_cols(label, f"{format_xof(payment.amount_xof)} XOF", width))
         if payment.change_xof:
             lines.append(_two_cols("Rendu", f"{format_xof(payment.change_xof)} XOF", width))

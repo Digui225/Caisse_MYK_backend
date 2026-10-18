@@ -5,13 +5,15 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
 
 from caisse import __version__
 from caisse.api import health
 from caisse.api.v1.router import api_router
 from caisse.config import get_settings
 from caisse.database import get_engine
-from caisse.errors import install_error_handlers
+from caisse.errors import PROBLEM_JSON, install_error_handlers
 from caisse.logging import configure_logging
 
 log = structlog.get_logger()
@@ -48,13 +50,54 @@ def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(json_logs=settings.is_production)
 
+    docs = settings.docs_enabled  # coupés en production, sauf ENABLE_DOCS=true
     app = FastAPI(
         title="Caisse restaurant — API",
         version=__version__,
         description=API_DESCRIPTION,
         openapi_tags=OPENAPI_TAGS,
         lifespan=lifespan,
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
     )
+
+    @app.middleware("http")
+    async def security_headers(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+        return response
+
+    @app.middleware("http")
+    async def body_size_limit(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        """Refuse sur `Content-Length` avant de lire le corps (413 problem+json)."""
+        try:
+            length = int(request.headers.get("content-length") or 0)
+        except ValueError:
+            length = 0
+        limit = settings.max_request_body_bytes
+        if length > limit:
+            return JSONResponse(
+                {
+                    "type": "https://caisse.local/errors/payload-too-large",
+                    "title": "Corps de requête trop volumineux",
+                    "status": 413,
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "detail": f"{length} octets reçus, {limit} au plus.",
+                    "meta": {"max_bytes": limit, "received_bytes": length},
+                    "request_id": getattr(request.state, "request_id", None),
+                },
+                status_code=413,
+                media_type=PROBLEM_JSON,
+            )
+        return await call_next(request)
 
     @app.middleware("http")
     async def request_id(
@@ -85,6 +128,9 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
             expose_headers=["X-Request-Id", "Idempotent-Replay"],
         )
+
+    if settings.allowed_hosts and "*" not in settings.allowed_hosts:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
 
     install_error_handlers(app)
     app.include_router(health.router)

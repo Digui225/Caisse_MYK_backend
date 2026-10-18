@@ -109,6 +109,16 @@ def clean_tables(migrated: None) -> Iterator[None]:
         conn.execute(text(f"TRUNCATE {names} CASCADE"))
 
 
+@pytest.fixture(autouse=True)
+def reset_rate_limits() -> Iterator[None]:
+    """La suite se connecte bien plus de 10 fois par minute depuis la même « IP »."""
+    from caisse.rate_limit import limiter
+
+    limiter.reset()
+    yield
+    limiter.reset()
+
+
 @pytest.fixture
 def db() -> Iterator[Session]:
     with get_sessionmaker()() as session:

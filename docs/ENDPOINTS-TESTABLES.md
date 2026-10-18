@@ -12,6 +12,8 @@ Les fonctions développées sur la branche `aziz` sont reprises ici **sous les r
 | **Tables** | `POST /tables`, `PATCH/DELETE /tables/{id}` (ADMIN, suppression logique), `GET /tables?is_active=`. **Chez aziz** : `DELETE` renvoie un message → ici la table. | [§5](#5-tables) |
 | **Paramètres et caisses** | `GET/PUT /settings` (lecture : connecté ; modification : ADMIN, seuls les champs envoyés changent) ; `GET/POST /cash-registers`, `PATCH /cash-registers/{id}`. **Chez aziz** : `/settings/registers` et un `DELETE` → ici `/cash-registers` et `PATCH {"is_active": false}`. Champs de `/settings` : mêmes noms que chez aziz pour l'établissement (`restaurant_name`, `ncc`, `rccm`, `address`, `phone`, `receipt_footer`, `default_vat_rate`, `screen_lock_timeout_seconds`), plus les moyens de paiement, les coupures et la FNE ; pas de `print_width` (réglé dans le `.env` de l'API). Ouvrir une session sur une caisse inconnue ou hors service renvoie `404` (avant : erreur 500). | [§13](#13-paramètres-et-caisses) |
 | **Tableau de bord du jour** | `GET /reports/dashboard?business_date=` (RESPONSABLE) : CA, commandes soldées / ouvertes / annulées, panier moyen, couverts, à table / à emporter, tables occupées, encaissements par moyen **et opérateur**, 10 meilleures ventes, ventes par heure et par caissier, sessions, articles en alerte, FNE. **Chez aziz** : paramètre `date` et noms différents (`total_sales_ttc_xof`, `settled_orders`, `payments_by_method`, `hourly_sales`, `sales_by_cashier`…) → voir §12. | [§12](#12-tableaux-de-bord) |
+| **Sécurité** | `429 RATE_LIMIT_EXCEEDED` (avec `Retry-After`) au-delà de 10 connexions ou autorisations par minute et par adresse IP (30 renouvellements) ; `413 PAYLOAD_TOO_LARGE` au-delà de 2 Mo ; en-têtes `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` sur toutes les réponses ; **Swagger et `/openapi.json` coupés quand `APP_ENV=production`** (sauf `ENABLE_DOCS=true`) ; `ALLOWED_HOSTS` facultatif. Repris de la branche aziz, réglables dans le `.env`. | [§0 Erreurs](#format-des-erreurs-applicationproblemjson) |
+| **Ticket** | Le paiement Mobile Money affiche l'opérateur (« Wave », « Orange Money », « MTN MoMo », « Moov Money ») ; l'en-tête affiche le NCC et le RCCM s'ils sont renseignés (`PUT /settings`). | [§8](#8-paiements) |
 | **Duplicata du Z, export FNE, client** | `POST /cash-sessions/{id}/z-report/reprint` (**chez aziz** : `POST /cash-sessions/{id}/print-z` ou `/printing/z-report/{id}`) ; `GET /fne/documents/export` en CSV (**chez aziz** : `/fne/export`) ; `GET /customers/{id}`. `POST /fne/generate` (ancien alias chez aziz) n'est pas repris : utiliser `POST /orders/{id}/fne`. | [§6](#6-sessions-de-caisse), [§9](#9-clients-entreprise-et-fne) |
 | **Partage de table** | `POST /orders` accepte `note_label` et `allow_multiple` (mêmes noms que chez aziz) ; `order.note_label` dans toutes les réponses de commande ; `GET /tables/board` ajoute `orders[]` et `total_ttc_xof` par table (**chez aziz** : `active_orders[]`, `is_occupied`) et garde `order` (la plus ancienne). Nouveau code `ORDER_LABEL_TAKEN`. Une table rouverte n'empêche plus d'annuler un paiement (`table_reoccupied` supprimé). | [§5](#5-tables), [§7](#7-commandes) |
 
@@ -202,6 +204,8 @@ Le front doit se fier à **`code`**, qui est stable. `title` et `detail` sont de
 | `PRINT_JOB_NOT_RETRYABLE` | 409 | `POST /printing/jobs/{id}/retry` sur un travail déjà `DONE` ou en cours |
 | `PRINTER_UNAVAILABLE` | 503 | Action directe (`/printing/open-drawer`, `/printing/test`) : l'agent répond, l'imprimante non. **Jamais** renvoyé par `/orders/{id}/payments` ou `/cash-sessions/{id}/close` : voir [§10](#10-impression). |
 | `PRINT_AGENT_UNAVAILABLE` | 503 | Action directe : l'agent d'impression lui-même est injoignable. Mêmes réserves que ci-dessus. |
+| `RATE_LIMIT_EXCEEDED` | 429 | Trop de requêtes depuis la même adresse IP sur `/auth/login`, `/auth/override` (10 par minute) ou `/auth/refresh` (30 par minute). En-tête `Retry-After` et `meta.retry_after` (secondes) |
+| `PAYLOAD_TOO_LARGE` | 413 | Corps de requête de plus de 2 Mo (`meta.max_bytes`) |
 | `INTERNAL_ERROR` | 500 | Erreur imprévue. La trace est dans les logs, jamais dans la réponse. |
 
 ---
@@ -303,6 +307,8 @@ Erreurs :
 | Connexion réussie | Le compteur du poste revient à 0 |
 
 Pendant le blocage, toute tentative renvoie `423` **sans être comptée**, même avec le bon PIN.
+
+**Limite par adresse IP**, en plus : 10 tentatives par minute sur `/auth/login` (et `/auth/override`), réussies ou non, quel que soit le poste annoncé ; au-delà, `429 RATE_LIMIT_EXCEEDED` avec l'en-tête `Retry-After`. Réglable dans le `.env` (`LOGIN_RATE_LIMIT_PER_MINUTE`, `REFRESH_RATE_LIMIT_PER_MINUTE` pour `/auth/refresh`, 30 par défaut).
 
 À tester :
 - bon PIN → `200` ;

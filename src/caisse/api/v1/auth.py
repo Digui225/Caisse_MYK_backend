@@ -1,6 +1,7 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
 from caisse.deps import Ctx, CurrentUser, DbSession
+from caisse.rate_limit import per_ip
 from caisse.schemas.auth import (
     LoginRequest,
     MeResponse,
@@ -28,7 +29,12 @@ def _token_response(db: DbSession, pair: TokenPair) -> TokenResponse:
     )
 
 
-@router.post("/login", response_model=TokenResponse, summary="Connexion par PIN")
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    summary="Connexion par PIN",
+    dependencies=[Depends(per_ip("login_rate_limit_per_minute"))],
+)
 def login(body: LoginRequest, db: DbSession, ctx: Ctx) -> TokenResponse:
     """Renvoie un jeton d'accès (15 min) et un jeton de renouvellement (12 h).
 
@@ -44,7 +50,12 @@ def login(body: LoginRequest, db: DbSession, ctx: Ctx) -> TokenResponse:
     return _token_response(db, auth_service.login(db, body.pin, ctx))
 
 
-@router.post("/refresh", response_model=TokenResponse, summary="Renouveler les jetons")
+@router.post(
+    "/refresh",
+    response_model=TokenResponse,
+    summary="Renouveler les jetons",
+    dependencies=[Depends(per_ip("refresh_rate_limit_per_minute"))],
+)
 def refresh(body: RefreshRequest, db: DbSession, ctx: Ctx) -> TokenResponse:
     """Échange un jeton de renouvellement contre une nouvelle paire de jetons.
 
@@ -73,7 +84,10 @@ def me(user: CurrentUser, db: DbSession) -> MeResponse:
 
 
 @router.post(
-    "/override", response_model=OverrideResponse, summary="Autorisation ponctuelle d'un responsable"
+    "/override",
+    response_model=OverrideResponse,
+    summary="Autorisation ponctuelle d'un responsable",
+    dependencies=[Depends(per_ip("login_rate_limit_per_minute"))],
 )
 def override(body: OverrideRequest, user: CurrentUser, db: DbSession, ctx: Ctx) -> OverrideResponse:
     """Un responsable saisit son PIN sur le poste du demandeur (connecté) et obtient un jeton

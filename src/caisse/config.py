@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     pin_lock_seconds: int = 30
 
     cors_origins: Annotated[list[str], NoDecode] = []
+    # noms d'hôte acceptés (en-tête Host) ; « * » : tous (défaut, l'API est sur le réseau local)
+    allowed_hosts: Annotated[list[str], NoDecode] = ["*"]
+    # Swagger et /openapi.json : actifs hors production, sauf ENABLE_DOCS explicite
+    enable_docs: bool | None = None
+    max_request_body_bytes: int = 2 * 1024 * 1024
+    # requêtes par minute et par adresse IP (mémoire de chaque processus gunicorn)
+    login_rate_limit_per_minute: int = 10
+    refresh_rate_limit_per_minute: int = 30
 
     print_agent_url: str = "http://host.docker.internal:8090"
     print_agent_token: str = ""
@@ -41,7 +49,7 @@ class Settings(BaseSettings):
     backup_dir: str = "/var/backups/caisse"
     backup_remote_target: str = ""
 
-    @field_validator("cors_origins", mode="before")
+    @field_validator("cors_origins", "allowed_hosts", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:
         if isinstance(value, str):
@@ -51,6 +59,10 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
+
+    @property
+    def docs_enabled(self) -> bool:
+        return self.enable_docs if self.enable_docs is not None else not self.is_production
 
 
 @lru_cache

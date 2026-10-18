@@ -145,7 +145,10 @@ def _print_receipt(
         ],
         payments=[
             receipt_domain.ReceiptPayment(
-                method=payment.method, amount_xof=payment.amount_xof, change_xof=payment.change_xof
+                method=payment.method,
+                amount_xof=payment.amount_xof,
+                change_xof=payment.change_xof,
+                provider=payment.provider,
             )
             for payment in order_out.payments
             if payment.status != PaymentStatus.VOIDED
@@ -154,6 +157,8 @@ def _print_receipt(
         header_name=str(header.get("name") or ""),
         header_address=header.get("address"),
         header_phone=header.get("phone"),
+        header_ncc=header.get("ncc") or None,
+        header_rccm=header.get("rccm") or None,
         footer=str(footer or ""),
         width=get_settings().printer_width,
     )
