@@ -68,9 +68,10 @@ print-agent/       service systemd hors Docker (imprimante USB + tiroir)
 |---|---|---|
 | L0 | Squelette, schéma + migration, problem+json, `domain/money`, OpenAPI | Endpoints mockés du reste du contrat, CI |
 | L1 | PIN Argon2, JWT + refresh (rotation), RBAC, override 60 s usage unique, blocage progressif par poste, users, audit, sessions de caisse (ouverture/clôture, X/Z, mouvements, idempotence générique) | — |
-| L2 | Lecture catégories / produits / tables, seeds, import CSV | CRUD catalogue, historique de prix |
+| L2 | Catalogue (catégories, produits, prix historisé avec motif), tables (CRUD, partage de table : plusieurs commandes par table), seeds, import CSV | — |
 | L3 | `GET /tables/board` (requête agrégée), commandes (table / à emporter), lignes (ajout, modification, retrait avec motif), annulation sous override, article libre, `POST /orders/{id}/reprint` | — |
 | L4 | Paiements (idempotents, partiels/mixtes, rendu monnaie, annulation tracée sous override), `GET /payment-methods` ; agent d'impression (USB + tiroir, mode dummy) ; ticket imprimé et tiroir ouvert à l'encaissement et à la clôture (Z), `/printing/*` (état, file, rejeu, ouverture manuelle, test) | Remboursement d'une commande soldée (reporté) |
 | L6 | FNE à la demande (B2C/B2B, idempotente, résultats incertains, renvoi manuel, avoirs), clients entreprise, récapitulatif fiscal | Worker de renvoi automatique, export du récapitulatif figé au Z |
 | L5 (stock) | Articles de stock distincts des produits, fiches techniques, entrées (CMP), pertes, inventaires (stock de départ `OPENING`), sortie automatique à l'encaissement et remise en stock à l'annulation d'un paiement, tableaux ventes et stock (ADMIN), import du menu et du stock tirés des Excel (`import-catalog`, `import-stock`) | Écrans front, rapport `dashboard`, alertes de stock dans le Z |
-| Reste | — | CRUD catalogue, rapports `dashboard`/`audit`, worker (renvoi auto FNE + impression), backup, admin (`/settings`, `/cash-registers`) |
+| Admin | `/settings`, `/cash-registers`, tableau de bord du jour, duplicata du Z, export CSV des FNE ; limite de débit par IP, en-têtes de sécurité, Swagger coupé en production (repris de la branche `aziz`, sous les routes du contrat) | — |
+| Reste | — | Rapport `audit`, worker (renvoi auto FNE + impression), temps réel (WebSocket), backup, agent d'impression et scripts pour Windows (à décider : OS du poste de caisse) |
