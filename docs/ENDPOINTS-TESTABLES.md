@@ -2,6 +2,8 @@
 
 Ce document décrit les **routes réellement implémentées** dans `caisse-backend`, telles que le code les expose aujourd'hui. Le contrat cible complet est dans [`03-CONTRAT-API.md`](../../projet_caisse_MYK/03-CONTRAT-API.md). Toute route du contrat absente d'ici renvoie `404 NOT_FOUND`.
 
+**Pour le front** : commencer par [`GUIDE-FRONT.md`](GUIDE-FRONT.md) (règles de travail, conventions, correspondance avec la branche `aziz`, routes par écran).
+
 ## Nouveautés du 16/10/2026 — reprise de la branche `aziz`
 
 Les fonctions développées sur la branche `aziz` sont reprises ici **sous les routes de ce document** (contrat `03-CONTRAT-API.md`). Le front s'aligne sur ces routes, pas sur celles de la branche `aziz`.

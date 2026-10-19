@@ -22,6 +22,8 @@ curl -s localhost:8001/health/ready
 
 OpenAPI : http://localhost:8001/docs · http://localhost:8001/openapi.json
 
+Front : [`docs/GUIDE-FRONT.md`](docs/GUIDE-FRONT.md) (branchement, conventions, routes par écran) ; détail des routes : [`docs/ENDPOINTS-TESTABLES.md`](docs/ENDPOINTS-TESTABLES.md).
+
 Après un redémarrage, ou en cas de doute : `./scripts/demarrer-caisse.sh` vérifie Docker, le réseau,
 la base, l'API, les migrations et la santé, démarre ce qui manque et explique chaque résultat
 (`--check` pour vérifier sans rien démarrer).
