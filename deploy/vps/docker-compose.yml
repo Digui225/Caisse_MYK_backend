@@ -1,0 +1,60 @@
+# Caisse MYK — recette sur le VPS partagé (162.215.172.50). Guide : projet_caisse_MYK/05-DEPLOIEMENT-VPS.md
+# Projet isolé des autres applis du VPS : propre base, propre réseau, propre volume, ports sur 127.0.0.1
+# (Docker contourne firewalld : un port publié sur 0.0.0.0 serait ouvert à Internet).
+# Les secrets restent hors du dépôt, dans /opt/caisse (db.env, api.env), et survivent aux mises à jour du code.
+#   cd /opt/caisse/backend/deploy/vps && docker compose up -d
+name: caisse
+
+services:
+  caisse-db:
+    image: postgres:16-alpine
+    container_name: caisse-db
+    restart: always
+    env_file: /opt/caisse/db.env        # POSTGRES_PASSWORD
+    environment:
+      POSTGRES_USER: caisse
+      POSTGRES_DB: caisse
+      TZ: Africa/Abidjan
+    ports:
+      - "127.0.0.1:5433:5432"           # pgAdmin via tunnel SSH uniquement
+    volumes:
+      - caisse_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U caisse -d caisse"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [caisse_net]
+
+  caisse-api:
+    build:
+      context: ../..
+      target: runtime
+    image: caisse-api:latest
+    container_name: caisse-api
+    restart: always
+    env_file: /opt/caisse/api.env       # DATABASE_URL, JWT_SECRET, CORS_ORIGINS…
+    environment:
+      # Nginx est devant : faire confiance à X-Forwarded-For pour la vraie IP du client (sans quoi
+      # la limite de connexions par IP serait partagée par tous). Sans risque : 8001 n'est
+      # joignable que depuis la machine.
+      FORWARDED_ALLOW_IPS: "*"
+    depends_on:
+      caisse-db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8001:8000"           # joignable par Nginx seulement
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [caisse_net]
+
+volumes:
+  caisse_pgdata:
+    name: caisse_pgdata
+
+networks:
+  caisse_net:
+    name: caisse_net
