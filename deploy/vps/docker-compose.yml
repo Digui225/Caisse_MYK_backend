@@ -15,8 +15,7 @@ services:
       POSTGRES_USER: caisse
       POSTGRES_DB: caisse
       TZ: Africa/Abidjan
-    ports:
-      - "127.0.0.1:15433:5432"           # pgAdmin via tunnel SSH uniquement
+    # aucun port publié : l'API passe par caisse_net ; pgAdmin par un tunnel SSH vers l'IP du conteneur
     volumes:
       - caisse_pgdata:/var/lib/postgresql/data
     healthcheck:
