@@ -16,7 +16,7 @@ services:
       POSTGRES_DB: caisse
       TZ: Africa/Abidjan
     ports:
-      - "127.0.0.1:5433:5432"           # pgAdmin via tunnel SSH uniquement
+      - "127.0.0.1:15433:5432"           # pgAdmin via tunnel SSH uniquement
     volumes:
       - caisse_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -36,14 +36,14 @@ services:
     env_file: /opt/caisse/api.env       # DATABASE_URL, JWT_SECRET, CORS_ORIGINS…
     environment:
       # Nginx est devant : faire confiance à X-Forwarded-For pour la vraie IP du client (sans quoi
-      # la limite de connexions par IP serait partagée par tous). Sans risque : 8001 n'est
+      # la limite de connexions par IP serait partagée par tous). Sans risque : 8011 n'est
       # joignable que depuis la machine.
       FORWARDED_ALLOW_IPS: "*"
     depends_on:
       caisse-db:
         condition: service_healthy
     ports:
-      - "127.0.0.1:8001:8000"           # joignable par Nginx seulement
+      - "127.0.0.1:8011:8000"           # joignable par Nginx seulement
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 15s
